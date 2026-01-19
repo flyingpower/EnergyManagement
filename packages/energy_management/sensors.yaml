@@ -1,0 +1,263 @@
+# Energy Management System - Template Sensors
+# These sensors calculate values and provide status information
+
+template:
+  - sensor:
+      # Current Charging Mode Display
+      - name: "Aktueller Lademodus"
+        unique_id: energy_mgmt_charging_mode
+        state: >
+          {% if is_state('input_boolean.manual_charging_mode', 'on') %}
+            Manuell
+          {% elif is_state('input_select.charging_state', 'emergency') %}
+            Notladung
+          {% elif is_state('input_select.charging_state', 'morning_readiness') %}
+            Morgen-Bereitschaft
+          {% elif is_state('input_select.charging_state', 'pv') %}
+            PV-Überschuss
+          {% elif is_state('input_select.charging_state', 'price') %}
+            Preisbasiert
+          {% else %}
+            Inaktiv
+          {% endif %}
+        icon: >
+          {% if is_state('input_boolean.manual_charging_mode', 'on') %}
+            mdi:hand-back-right
+          {% elif is_state('input_select.charging_state', 'emergency') %}
+            mdi:alert
+          {% elif is_state('input_select.charging_state', 'morning_readiness') %}
+            mdi:alarm
+          {% elif is_state('input_select.charging_state', 'pv') %}
+            mdi:solar-power
+          {% elif is_state('input_select.charging_state', 'price') %}
+            mdi:currency-eur
+          {% else %}
+            mdi:power-sleep
+          {% endif %}
+
+      # PV Surplus Available for Charging
+      - name: "Verfügbarer PV-Überschuss"
+        unique_id: energy_mgmt_available_pv_surplus
+        unit_of_measurement: "W"
+        device_class: power
+        state: >
+          {% set power_consumption = states('sensor.tibber_power') | float(0) %}
+          {% set power_production = states('sensor.tibber_power_production') | float(0) %}
+          {% set net_consumption = power_consumption - power_production %}
+          {% set buffer = states('input_number.pv_charging_buffer') | float(200) %}
+          {% if net_consumption < 0 %}
+            {{ (net_consumption | abs - buffer) | round(0) | max(0) }}
+          {% else %}
+            0
+          {% endif %}
+
+      # Calculated Charging Current from PV Surplus
+      - name: "Berechneter Ladestrom (PV)"
+        unique_id: energy_mgmt_calculated_pv_current
+        unit_of_measurement: "A"
+        state: >
+          {% set surplus = states('sensor.verfugbarer_pv_uberschuss') | float(0) %}
+          {% set voltage = 230 %}
+          {% set phases = 1 %}
+          {% if surplus > 0 %}
+            {% set current = (surplus / (phases * voltage)) | round(0) %}
+            {{ current | int | max(6) | min(32) }}
+          {% else %}
+            0
+          {% endif %}
+
+      # Current Tibber Price
+      - name: "Aktueller Strompreis"
+        unique_id: energy_mgmt_current_price
+        unit_of_measurement: "EUR/kWh"
+        state: >
+          {{ states('sensor.tibber_electricity_price') | float(0) | round(4) }}
+        icon: mdi:currency-eur
+
+      # Tesla SOC
+      - name: "Tesla Ladestand"
+        unique_id: energy_mgmt_tesla_soc
+        unit_of_measurement: "%"
+        device_class: battery
+        state: >
+          {{ states('sensor.model_3_battery_level') | float(0) | round(0) }}
+        icon: mdi:battery-charging
+
+      # Tesla Charging Status
+      - name: "Tesla Ladestatus"
+        unique_id: energy_mgmt_tesla_charging_status
+        state: >
+          {% set status = states('sensor.model_3_charging') %}
+          {% if status == 'Charging' %}
+            Lädt
+          {% elif status == 'Complete' %}
+            Vollständig
+          {% elif status == 'Stopped' %}
+            Gestoppt
+          {% elif status == 'Disconnected' %}
+            Nicht verbunden
+          {% else %}
+            {{ status }}
+          {% endif %}
+        icon: >
+          {% set status = states('sensor.model_3_charging') %}
+          {% if status == 'Charging' %}
+            mdi:battery-charging
+          {% elif status == 'Complete' %}
+            mdi:battery-check
+          {% elif status == 'Disconnected' %}
+            mdi:power-plug-off
+          {% else %}
+            mdi:battery
+          {% endif %}
+
+      # Is Car Connected and at Home
+      - name: "Auto Angeschlossen"
+        unique_id: energy_mgmt_car_connected
+        state: >
+          {% set charging_state = states('sensor.model_3_charging') %}
+          {{ charging_state in ['Charging', 'Stopped', 'Complete'] }}
+        icon: >
+          {% if is_state('binary_sensor.auto_angeschlossen', 'on') %}
+            mdi:car-electric
+          {% else %}
+            mdi:car-off
+          {% endif %}
+
+      # Should PV Charging Be Active
+      - name: "PV-Laden Sollzustand"
+        unique_id: energy_mgmt_pv_should_charge
+        state: >
+          {% set surplus = states('sensor.verfugbarer_pv_uberschuss') | float(0) %}
+          {% set min_surplus = states('input_number.min_pv_surplus') | float(1400) %}
+          {% set car_connected = is_state('binary_sensor.auto_angeschlossen', 'on') %}
+          {% set pv_enabled = is_state('input_boolean.enable_pv_charging', 'on') %}
+          {% set manual_mode = is_state('input_boolean.manual_charging_mode', 'on') %}
+          {{ car_connected and pv_enabled and not manual_mode and surplus >= min_surplus }}
+
+      # Easee Charger Status
+      - name: "Easee Ladegerät Status"
+        unique_id: energy_mgmt_easee_status
+        state: >
+          {% set status = states('sensor.garage_status') %}
+          {% if status == 'ready' %}
+            Bereit
+          {% elif status == 'charging' %}
+            Lädt
+          {% elif status == 'completed' or status == 'Completed' %}
+            Abgeschlossen
+          {% elif status == 'error' %}
+            Fehler
+          {% else %}
+            {{ status }}
+          {% endif %}
+        icon: mdi:ev-station
+
+      # Current Charging Power
+      - name: "Aktuelle Ladeleistung"
+        unique_id: energy_mgmt_current_charging_power
+        unit_of_measurement: "W"
+        device_class: power
+        state: >
+          {{ (states('sensor.garage_power') | float(0) * 1000) | round(0) }}
+        icon: mdi:lightning-bolt
+
+      # Estimated kWh Needed to Target
+      - name: "Benötigte Energie bis Ziel"
+        unique_id: energy_mgmt_kwh_needed
+        unit_of_measurement: "kWh"
+        state: >
+          {% set current_soc = states('sensor.tesla_ladestand') | float(0) %}
+          {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
+          {% set battery_capacity = 60 %}  {# Tesla Model 3 battery in kWh #}
+          {% set efficiency_loss = 1.15 %}  {# 15% charging loss #}
+          {% if target_soc > current_soc %}
+            {{ (((target_soc - current_soc) / 100 * battery_capacity) * efficiency_loss) | round(2) }}
+          {% else %}
+            0
+          {% endif %}
+
+      # Estimated Hours Needed to Charge
+      - name: "Geschätzte Ladedauer"
+        unique_id: energy_mgmt_hours_needed
+        unit_of_measurement: "h"
+        state: >
+          {% set kwh_needed = states('sensor.benotigte_energie_bis_ziel') | float(0) %}
+          {% set charger_power = 7.4 %}  {# Easee charger power in kW #}
+          {% if kwh_needed > 0 %}
+            {{ (kwh_needed / charger_power) | round(1) }}
+          {% else %}
+            0
+          {% endif %}
+
+      # Price Level Indicator
+      - name: "Preisniveau"
+        unique_id: energy_mgmt_price_level
+        state: >
+          {% set price = states('sensor.aktueller_strompreis') | float(0) %}
+          {% set threshold_50 = states('input_number.price_threshold_50') | float(0.30) %}
+          {% set threshold_80 = states('input_number.price_threshold_80') | float(0.28) %}
+          {% if price <= threshold_80 %}
+            Sehr günstig
+          {% elif price <= threshold_50 %}
+            Günstig
+          {% elif price <= 0.35 %}
+            Normal
+          {% elif price <= 0.45 %}
+            Teuer
+          {% else %}
+            Sehr teuer
+          {% endif %}
+        icon: >
+          {% set price = states('sensor.aktueller_strompreis') | float(0) %}
+          {% set threshold_80 = states('input_number.price_threshold_80') | float(0.28) %}
+          {% if price <= threshold_80 %}
+            mdi:arrow-down-bold
+          {% else %}
+            mdi:arrow-up-bold
+          {% endif %}
+
+  - binary_sensor:
+      # Car Connected Binary Sensor
+      - name: "Auto Angeschlossen"
+        unique_id: energy_mgmt_car_connected_binary
+        state: >
+          {% set charging_state = states('sensor.model_3_charging') %}
+          {{ charging_state in ['Charging', 'Stopped', 'Complete'] }}
+        device_class: plug
+        icon: >
+          {% if is_state('binary_sensor.auto_angeschlossen', 'on') %}
+            mdi:power-plug
+          {% else %}
+            mdi:power-plug-off
+          {% endif %}
+
+      # Emergency Charging Needed
+      - name: "Notladung Erforderlich"
+        unique_id: energy_mgmt_emergency_needed
+        state: >
+          {% set soc = states('sensor.tesla_ladestand') | float(100) %}
+          {{ soc < 20 }}
+        device_class: problem
+        icon: >
+          {% if is_state('binary_sensor.notladung_erforderlich', 'on') %}
+            mdi:alert-circle
+          {% else %}
+            mdi:check-circle
+          {% endif %}
+
+      # Morning Target Will Be Met
+      - name: "Morgenziel Erreichbar"
+        unique_id: energy_mgmt_morning_target_reachable
+        state: >
+          {% set current_soc = states('sensor.tesla_ladestand') | float(0) %}
+          {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
+          {% set hours_until_7am = 12 %}  {# Simplified - should calculate actual time #}
+          {% set hours_needed = states('sensor.geschatzte_ladedauer') | float(0) %}
+          {{ hours_until_7am >= hours_needed or current_soc >= target_soc }}
+        icon: >
+          {% if is_state('binary_sensor.morgenziel_erreichbar', 'on') %}
+            mdi:check-circle-outline
+          {% else %}
+            mdi:alert-circle-outline
+          {% endif %}

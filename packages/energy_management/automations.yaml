@@ -1,0 +1,322 @@
+# Energy Management System - Automations
+# Main charging control logic
+
+automation:
+  # ============================================================================
+  # CENTRAL CHARGING CONTROLLER
+  # Evaluates all scenarios every 5 minutes and determines active mode
+  # ============================================================================
+
+  - id: energy_mgmt_central_controller
+    alias: "Energie Management - Zentralsteuerung"
+    description: "Hauptsteuerung für alle Ladeszenarien mit Prioritätsverwaltung"
+    trigger:
+      - platform: time_pattern
+        minutes: "/5"  # Every 5 minutes
+      - platform: state
+        entity_id: input_boolean.manual_charging_mode
+      - platform: state
+        entity_id: sensor.model_3_charging
+      - platform: state
+        entity_id: sensor.tibber_power
+    mode: single
+    action:
+      - choose:
+          # Priority 1: Emergency Charging (SOC < 20%)
+          - conditions:
+              - condition: state
+                entity_id: binary_sensor.notladung_erforderlich
+                state: "on"
+              - condition: state
+                entity_id: binary_sensor.auto_angeschlossen
+                state: "on"
+            sequence:
+              - service: input_select.select_option
+                target:
+                  entity_id: input_select.charging_state
+                data:
+                  option: "emergency"
+              - service: script.start_emergency_charging
+
+          # Priority 2: Manual Mode
+          - conditions:
+              - condition: state
+                entity_id: input_boolean.manual_charging_mode
+                state: "on"
+              - condition: state
+                entity_id: binary_sensor.auto_angeschlossen
+                state: "on"
+            sequence:
+              - service: input_select.select_option
+                target:
+                  entity_id: input_select.charging_state
+                data:
+                  option: "manual"
+              - service: script.execute_manual_charging
+
+          # Priority 3: PV Surplus Charging
+          - conditions:
+              - condition: state
+                entity_id: sensor.pv_laden_sollzustand
+                state: "true"
+            sequence:
+              - service: input_select.select_option
+                target:
+                  entity_id: input_select.charging_state
+                data:
+                  option: "pv"
+              - service: script.adjust_pv_charging
+
+          # Priority 4: Price-Based Charging (during scheduled hours)
+          - conditions:
+              - condition: state
+                entity_id: input_boolean.enable_price_charging
+                state: "on"
+              - condition: state
+                entity_id: binary_sensor.auto_angeschlossen
+                state: "on"
+              - condition: template
+                value_template: "{{ states('sensor.price_charging_should_be_active') == 'true' }}"
+            sequence:
+              - service: input_select.select_option
+                target:
+                  entity_id: input_select.charging_state
+                data:
+                  option: "price"
+              - service: script.start_price_charging
+
+        # Default: Set to idle and stop charging
+        default:
+          - service: input_select.select_option
+            target:
+              entity_id: input_select.charging_state
+            data:
+              option: "idle"
+          - condition: template
+            value_template: "{{ states('sensor.model_3_charging') == 'Charging' }}"
+          - service: script.stop_charging
+
+  # ============================================================================
+  # PV SURPLUS CHARGING
+  # ============================================================================
+
+  - id: energy_mgmt_pv_charging_adjust
+    alias: "Energie Management - PV Ladestrom anpassen"
+    description: "Passt den Ladestrom alle 5 Minuten an den PV-Überschuss an"
+    trigger:
+      - platform: time_pattern
+        minutes: "/5"
+      - platform: state
+        entity_id: sensor.verfugbarer_pv_uberschuss
+    condition:
+      - condition: state
+        entity_id: input_select.charging_state
+        state: "pv"
+      - condition: state
+        entity_id: binary_sensor.auto_angeschlossen
+        state: "on"
+    mode: restart
+    action:
+      - service: script.adjust_pv_charging
+
+  # ============================================================================
+  # PRICE-BASED CHARGING
+  # ============================================================================
+
+  - id: energy_mgmt_calculate_optimal_hours
+    alias: "Energie Management - Optimale Ladezeiten berechnen"
+    description: "Berechnet die günstigsten Ladezeiten basierend auf Tibber-Preisen"
+    trigger:
+      - platform: time
+        at: "13:00:00"  # When Tibber updates prices
+      - platform: state
+        entity_id: sensor.tibber_electricity_price
+    action:
+      - service: script.calculate_optimal_charging_hours
+
+  - id: energy_mgmt_morning_readiness_check
+    alias: "Energie Management - Morgen-Bereitschaft prüfen"
+    description: "Prüft abends, ob das Morgenziel erreicht wird"
+    trigger:
+      - platform: time
+        at: "22:00:00"
+    condition:
+      - condition: state
+        entity_id: input_boolean.enable_morning_readiness
+        state: "on"
+    action:
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: binary_sensor.morgenziel_erreichbar
+                state: "off"
+            sequence:
+              - service: notify.mobile_app
+                data:
+                  title: "⚠️ Morgenziel gefährdet"
+                  message: >
+                    Das Fahrzeug wird morgen um 7:00 Uhr wahrscheinlich nicht
+                    {{ states('input_number.target_soc_morning') }}% erreichen.
+                    Aktueller Ladestand: {{ states('sensor.tesla_ladestand') }}%
+              - service: input_select.select_option
+                target:
+                  entity_id: input_select.charging_state
+                data:
+                  option: "morning_readiness"
+              - service: script.start_emergency_morning_charge
+
+  # ============================================================================
+  # MANUAL CHARGING
+  # ============================================================================
+
+  - id: energy_mgmt_manual_charging_update
+    alias: "Energie Management - Manuelle Ladung aktualisieren"
+    description: "Aktualisiert den manuellen Ladeplan alle 15 Minuten"
+    trigger:
+      - platform: time_pattern
+        minutes: "/15"
+      - platform: state
+        entity_id: input_boolean.manual_charging_mode
+        to: "on"
+      - platform: state
+        entity_id: input_number.manual_target_soc
+      - platform: state
+        entity_id: input_datetime.manual_deadline
+    condition:
+      - condition: state
+        entity_id: input_boolean.manual_charging_mode
+        state: "on"
+      - condition: state
+        entity_id: input_select.charging_state
+        state: "manual"
+    action:
+      - service: script.execute_manual_charging
+
+  - id: energy_mgmt_manual_charging_complete
+    alias: "Energie Management - Manuelle Ladung abgeschlossen"
+    description: "Benachrichtigt, wenn das manuelle Ladeziel erreicht wurde"
+    trigger:
+      - platform: template
+        value_template: >
+          {{ states('sensor.tesla_ladestand') | float >=
+             states('input_number.manual_target_soc') | float }}
+    condition:
+      - condition: state
+        entity_id: input_boolean.manual_charging_mode
+        state: "on"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "✅ Ladeziel erreicht"
+          message: >
+            Das Fahrzeug hat {{ states('sensor.tesla_ladestand') }}% erreicht.
+            Manuelle Ladung abgeschlossen.
+      - service: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.manual_charging_mode
+      - service: script.stop_charging
+
+  # ============================================================================
+  # NOTIFICATIONS
+  # ============================================================================
+
+  - id: energy_mgmt_charging_started
+    alias: "Energie Management - Benachrichtigung Ladung gestartet"
+    description: "Sendet Benachrichtigung beim Ladestart"
+    trigger:
+      - platform: state
+        entity_id: sensor.model_3_charging
+        to: "Charging"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "🔌 Ladung gestartet"
+          message: >
+            Modus: {{ states('sensor.aktueller_lademodus') }}
+            Aktuell: {{ states('sensor.tesla_ladestand') }}%
+            {% if is_state('input_select.charging_state', 'pv') %}
+            PV-Überschuss: {{ states('sensor.verfugbarer_pv_uberschuss') }}W
+            {% elif is_state('input_select.charging_state', 'price') %}
+            Strompreis: {{ states('sensor.aktueller_strompreis') }} EUR/kWh
+            {% endif %}
+
+  - id: energy_mgmt_charging_completed
+    alias: "Energie Management - Benachrichtigung Ladung abgeschlossen"
+    description: "Sendet Benachrichtigung beim Ladeende"
+    trigger:
+      - platform: state
+        entity_id: sensor.model_3_charging
+        to: "Complete"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "✅ Ladung abgeschlossen"
+          message: >
+            Ladestand: {{ states('sensor.tesla_ladestand') }}%
+            Modus: {{ states('sensor.aktueller_lademodus') }}
+            Energie geladen: {{ states('sensor.garage_session_energy') }} kWh
+
+  - id: energy_mgmt_emergency_charging_alert
+    alias: "Energie Management - Notladung Warnung"
+    description: "Warnt bei kritisch niedrigem Ladestand"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.tesla_ladestand
+        below: 20
+    condition:
+      - condition: state
+        entity_id: binary_sensor.auto_angeschlossen
+        state: "on"
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "⚠️ Notladung aktiviert"
+          message: >
+            Kritischer Ladestand: {{ states('sensor.tesla_ladestand') }}%
+            Notladung wurde gestartet.
+          data:
+            priority: high
+
+  # ============================================================================
+  # SAFETY & ERROR HANDLING
+  # ============================================================================
+
+  - id: energy_mgmt_car_disconnected
+    alias: "Energie Management - Auto getrennt"
+    description: "Stoppt Ladung, wenn Auto getrennt wird"
+    trigger:
+      - platform: state
+        entity_id: sensor.model_3_charging
+        to: "Disconnected"
+    action:
+      - service: input_select.select_option
+        target:
+          entity_id: input_select.charging_state
+        data:
+          option: "idle"
+      - condition: state
+        entity_id: input_boolean.manual_charging_mode
+        state: "on"
+      - service: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.manual_charging_mode
+
+  - id: energy_mgmt_integration_error
+    alias: "Energie Management - Integrationsfehler"
+    description: "Benachrichtigt bei Integrationsproblemen"
+    trigger:
+      - platform: state
+        entity_id:
+          - sensor.model_3_battery_level
+          - sensor.tibber_electricity_price
+          - sensor.garage_status
+        to: "unavailable"
+        for:
+          minutes: 10
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "⚠️ Integration nicht verfügbar"
+          message: >
+            {{ trigger.to_state.attributes.friendly_name }} ist seit 10 Minuten nicht verfügbar.
+            Energie-Management könnte beeinträchtigt sein.

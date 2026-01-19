@@ -1,0 +1,257 @@
+# Energy Management System - Scripts
+# Charging control scripts called by automations
+
+script:
+  # ============================================================================
+  # PV SURPLUS CHARGING SCRIPTS
+  # ============================================================================
+
+  adjust_pv_charging:
+    alias: "PV-Ladung anpassen"
+    description: "Passt den Ladestrom basierend auf verfügbarem PV-Überschuss an"
+    sequence:
+      - variables:
+          surplus: "{{ states('sensor.verfugbarer_pv_uberschuss') | float(0) }}"
+          min_surplus: "{{ states('input_number.min_pv_surplus') | float(1400) }}"
+          calculated_current: "{{ states('sensor.berechneter_ladestrom_pv') | int(0) }}"
+          is_charging: "{{ states('sensor.model_3_charging') == 'Charging' }}"
+
+      - choose:
+          # Case 1: Surplus available and not charging - Start charging
+          - conditions:
+              - condition: template
+                value_template: "{{ surplus >= min_surplus }}"
+              - condition: template
+                value_template: "{{ not is_charging }}"
+              - condition: template
+                value_template: "{{ calculated_current >= 6 }}"
+            sequence:
+              - service: number.set_value
+                target:
+                  entity_id: number.model_3_charge_current
+                data:
+                  value: "{{ calculated_current }}"
+              - delay:
+                  seconds: 2
+              - service: switch.turn_on
+                target:
+                  entity_id: switch.model_3_charge
+
+          # Case 2: Surplus available and charging - Adjust current
+          - conditions:
+              - condition: template
+                value_template: "{{ surplus >= min_surplus }}"
+              - condition: template
+                value_template: "{{ is_charging }}"
+              - condition: template
+                value_template: "{{ calculated_current >= 6 }}"
+            sequence:
+              - service: number.set_value
+                target:
+                  entity_id: number.model_3_charge_current
+                data:
+                  value: "{{ calculated_current }}"
+
+          # Case 3: Insufficient surplus and charging - Stop charging
+          - conditions:
+              - condition: template
+                value_template: "{{ surplus < min_surplus }}"
+              - condition: template
+                value_template: "{{ is_charging }}"
+            sequence:
+              - service: script.stop_charging
+
+  # ============================================================================
+  # PRICE-BASED CHARGING SCRIPTS
+  # ============================================================================
+
+  calculate_optimal_charging_hours:
+    alias: "Optimale Ladezeiten berechnen"
+    description: "Berechnet die günstigsten Stunden zum Laden basierend auf Tibber-Preisen"
+    sequence:
+      - variables:
+          current_soc: "{{ states('sensor.tesla_ladestand') | float(0) }}"
+          target_soc: "{{ states('input_number.target_soc_morning') | float(80) }}"
+          hours_needed: "{{ states('sensor.geschatzte_ladedauer') | float(0) }}"
+          prices_today: "{{ state_attr('sensor.tibber_prices', 'today') | default([]) }}"
+          prices_tomorrow: "{{ state_attr('sensor.tibber_prices', 'tomorrow') | default([]) }}"
+
+      # Note: This is simplified. In production, use Python script or AppDaemon
+      # for more complex price optimization logic
+      - service: input_text.set_value
+        target:
+          entity_id: input_text.optimal_charging_schedule
+        data:
+          value: "Berechnung läuft..."
+
+  start_price_charging:
+    alias: "Preisbasierte Ladung starten"
+    description: "Startet Ladung während günstiger Preisstunden"
+    sequence:
+      - variables:
+          current_price: "{{ states('sensor.aktueller_strompreis') | float(0) }}"
+          threshold_50: "{{ states('input_number.price_threshold_50') | float(0.30) }}"
+          threshold_80: "{{ states('input_number.price_threshold_80') | float(0.28) }}"
+          current_soc: "{{ states('sensor.tesla_ladestand') | float(0) }}"
+
+      - choose:
+          # Very cheap - charge to 80%
+          - conditions:
+              - condition: template
+                value_template: "{{ current_price <= threshold_80 }}"
+              - condition: template
+                value_template: "{{ current_soc < 80 }}"
+            sequence:
+              - service: number.set_value
+                target:
+                  entity_id: number.model_3_charge_limit
+                data:
+                  value: 80
+              - service: number.set_value
+                target:
+                  entity_id: number.model_3_charge_current
+                data:
+                  value: 16  # Maximum current available
+              - service: switch.turn_on
+                target:
+                  entity_id: switch.model_3_charge
+
+          # Cheap - charge to 50%
+          - conditions:
+              - condition: template
+                value_template: "{{ current_price <= threshold_50 }}"
+              - condition: template
+                value_template: "{{ current_soc < 50 }}"
+            sequence:
+              - service: number.set_value
+                target:
+                  entity_id: number.model_3_charge_limit
+                data:
+                  value: 50
+              - service: number.set_value
+                target:
+                  entity_id: number.model_3_charge_current
+                data:
+                  value: 16
+              - service: switch.turn_on
+                target:
+                  entity_id: switch.model_3_charge
+
+  start_emergency_morning_charge:
+    alias: "Notladung für Morgenziel starten"
+    description: "Startet Notladung, um das Morgenziel zu erreichen"
+    sequence:
+      - service: number.set_value
+        target:
+          entity_id: number.model_3_charge_limit
+        data:
+          value: "{{ states('input_number.target_soc_morning') | int }}"
+      - service: number.set_value
+        target:
+          entity_id: number.model_3_charge_current
+        data:
+          value: 16  # Maximum current for fastest charging
+      - service: switch.turn_on
+        target:
+          entity_id: switch.model_3_charge
+
+  # ============================================================================
+  # MANUAL CHARGING SCRIPTS
+  # ============================================================================
+
+  execute_manual_charging:
+    alias: "Manuelle Ladung ausführen"
+    description: "Führt manuelle Ladung mit intelligenter Planung aus"
+    sequence:
+      - variables:
+          current_soc: "{{ states('sensor.tesla_ladestand') | float(0) }}"
+          target_soc: "{{ states('input_number.manual_target_soc') | float(80) }}"
+          deadline: "{{ states('input_datetime.manual_deadline') }}"
+          pv_surplus: "{{ states('sensor.verfugbarer_pv_uberschuss') | float(0) }}"
+          current_price: "{{ states('sensor.aktueller_strompreis') | float(0) }}"
+          min_pv: "{{ states('input_number.min_pv_surplus') | float(1400) }}"
+
+      - choose:
+          # Already at target
+          - conditions:
+              - condition: template
+                value_template: "{{ current_soc >= target_soc }}"
+            sequence:
+              - service: script.stop_charging
+
+          # Use PV if available
+          - conditions:
+              - condition: template
+                value_template: "{{ pv_surplus >= min_pv }}"
+            sequence:
+              - service: script.adjust_pv_charging
+
+          # Use grid charging
+          - conditions:
+              - condition: template
+                value_template: "{{ current_soc < target_soc }}"
+            sequence:
+              - service: number.set_value
+                target:
+                  entity_id: number.model_3_charge_limit
+                data:
+                  value: "{{ target_soc | int }}"
+              - service: number.set_value
+                target:
+                  entity_id: number.model_3_charge_current
+                data:
+                  value: 16
+              - service: switch.turn_on
+                target:
+                  entity_id: switch.model_3_charge
+
+  # ============================================================================
+  # EMERGENCY CHARGING SCRIPTS
+  # ============================================================================
+
+  start_emergency_charging:
+    alias: "Notladung starten"
+    description: "Startet Notladung bei kritischem Ladestand"
+    sequence:
+      - service: number.set_value
+        target:
+          entity_id: number.model_3_charge_limit
+        data:
+          value: 80
+      - service: number.set_value
+        target:
+          entity_id: number.model_3_charge_current
+        data:
+          value: 16  # Maximum current
+      - service: switch.turn_on
+        target:
+          entity_id: switch.model_3_charge
+      - service: notify.mobile_app
+        data:
+          title: "🚨 Notladung aktiviert"
+          message: >
+            Kritischer Ladestand: {{ states('sensor.tesla_ladestand') }}%
+            Maximale Ladeleistung aktiviert.
+          data:
+            priority: high
+
+  # ============================================================================
+  # UTILITY SCRIPTS
+  # ============================================================================
+
+  stop_charging:
+    alias: "Ladung stoppen"
+    description: "Stoppt die Ladung und setzt den Zustand zurück"
+    sequence:
+      - service: switch.turn_off
+        target:
+          entity_id: switch.model_3_charge
+      - delay:
+          seconds: 2
+      - condition: template
+        value_template: "{{ is_state('input_select.charging_state', 'manual') }}"
+      - service: input_select.select_option
+        target:
+          entity_id: input_select.charging_state
+        data:
+          option: "idle"

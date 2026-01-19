@@ -1,0 +1,59 @@
+# Home Assistant
+secrets.yaml
+known_devices.yaml
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.sqlite
+*.uuid
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Home Assistant specific
+home-assistant.log
+home-assistant_v2.db
+.HA_VERSION
+.cloud
+.storage
+deps/
+tts/
+.google.token
+
+# Backups (keep intentional backups, ignore automatic ones)
+*.backup
+
+# Custom components cache
+custom_components/__pycache__/

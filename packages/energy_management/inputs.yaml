@@ -1,0 +1,119 @@
+# Energy Management System - Input Helpers
+# These entities allow user control and configuration of the charging system
+
+input_number:
+  # Morning Readiness Target
+  target_soc_morning:
+    name: "Ziel-Ladestand Morgen (7:00 Uhr)"
+    min: 20
+    max: 100
+    step: 5
+    unit_of_measurement: "%"
+    icon: mdi:battery-charging-80
+    initial: 80
+
+  # Manual Charging Target
+  manual_target_soc:
+    name: "Manueller Ziel-Ladestand"
+    min: 20
+    max: 100
+    step: 5
+    unit_of_measurement: "%"
+    icon: mdi:battery-charging
+    initial: 80
+
+  # Price Thresholds
+  price_threshold_50:
+    name: "Preisschwelle für 50% Ladung"
+    min: 0.10
+    max: 0.50
+    step: 0.01
+    unit_of_measurement: "EUR/kWh"
+    icon: mdi:currency-eur
+    initial: 0.30
+
+  price_threshold_80:
+    name: "Preisschwelle für 80% Ladung"
+    min: 0.10
+    max: 0.50
+    step: 0.01
+    unit_of_measurement: "EUR/kWh"
+    icon: mdi:currency-eur
+    initial: 0.28
+
+  # Minimum PV Surplus
+  min_pv_surplus:
+    name: "Minimaler PV-Überschuss"
+    min: 500
+    max: 3000
+    step: 100
+    unit_of_measurement: "W"
+    icon: mdi:solar-power
+    initial: 1400
+
+  # PV Charging Buffer
+  pv_charging_buffer:
+    name: "PV Lade-Puffer"
+    min: 0
+    max: 500
+    step: 50
+    unit_of_measurement: "W"
+    icon: mdi:buffer
+    initial: 200
+
+  # Hysteresis Time (minutes before stopping)
+  pv_hysteresis_time:
+    name: "PV Hysterese-Zeit"
+    min: 1
+    max: 15
+    step: 1
+    unit_of_measurement: "min"
+    icon: mdi:timer-sand
+    initial: 5
+
+input_boolean:
+  # Manual Charging Mode Toggle
+  manual_charging_mode:
+    name: "Manueller Lademodus"
+    icon: mdi:car-electric
+    initial: false
+
+  # Enable/Disable PV Charging
+  enable_pv_charging:
+    name: "PV-Laden aktiviert"
+    icon: mdi:solar-power
+    initial: true
+
+  # Enable/Disable Price-Based Charging
+  enable_price_charging:
+    name: "Preisbasiertes Laden aktiviert"
+    icon: mdi:currency-eur
+    initial: true
+
+  # Enable Morning Readiness Check
+  enable_morning_readiness:
+    name: "Morgen-Bereitschaft aktiviert"
+    icon: mdi:alarm
+    initial: true
+
+input_datetime:
+  # Manual Charging Deadline
+  manual_deadline:
+    name: "Manuelles Ladeziel-Zeitpunkt"
+    has_date: true
+    has_time: true
+    icon: mdi:clock-end
+
+input_select:
+  # Charging State Machine
+  charging_state:
+    name: "Ladezustand"
+    options:
+      - "idle"
+      - "pv"
+      - "price"
+      - "manual"
+      - "emergency"
+      - "morning_readiness"
+    initial: "idle"
+    icon: mdi:state-machine

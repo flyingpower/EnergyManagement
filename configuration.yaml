@@ -1,0 +1,166 @@
+# Home Assistant Configuration for Energy Management System
+# Main configuration file
+
+homeassistant:
+  name: Zuhause
+  latitude: !secret latitude
+  longitude: !secret longitude
+  elevation: !secret elevation
+  unit_system: metric
+  time_zone: Europe/Berlin
+  currency: EUR
+
+  # Include packages
+  packages: !include_dir_named packages
+
+# Enable configuration UI
+config:
+
+# Enable frontend
+frontend:
+  themes: !include_dir_merge_named themes
+
+# Enable Lovelace in YAML mode (optional)
+lovelace:
+  mode: storage
+  # Uncomment to use YAML mode:
+  # mode: yaml
+  # resources: !include lovelace/resources.yaml
+  # dashboards:
+  #   energy-management:
+  #     mode: yaml
+  #     title: Energie Management
+  #     icon: mdi:car-electric
+  #     filename: dashboards/energy_management.yaml
+
+# Enable the recorder for history
+recorder:
+  db_url: !secret db_url
+  purge_keep_days: 30
+  include:
+    entities:
+      # Tesla entities
+      - sensor.tesla_battery
+      - sensor.tesla_charging_state
+      - sensor.tesla_ladestand
+      - sensor.tesla_ladestatus
+      # Tibber entities
+      - sensor.tibber_prices
+      - sensor.tibber_current_price
+      - sensor.tibber_net_consumption
+      - sensor.aktueller_strompreis
+      - sensor.verfugbarer_pv_uberschuss
+      # Easee entities
+      - sensor.easee_power
+      - sensor.easee_current
+      - sensor.easee_energy
+      - sensor.easee_status
+      - sensor.aktuelle_ladeleistung
+      # Energy Management entities
+      - input_select.charging_state
+      - sensor.aktueller_lademodus
+      - sensor.benotigte_energie_bis_ziel
+      - sensor.geschatzte_ladedauer
+
+# Enable history
+history:
+  include:
+    entities:
+      - sensor.tesla_ladestand
+      - sensor.aktuelle_ladeleistung
+      - sensor.aktueller_strompreis
+      - sensor.verfugbarer_pv_uberschuss
+      - input_select.charging_state
+
+# Enable system health check
+system_health:
+
+# Enable mobile app support
+mobile_app:
+
+# Logger
+logger:
+  default: info
+  logs:
+    custom_components.energy_management: debug
+    homeassistant.components.automation: info
+
+# HTTP
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+
+# Text to speech
+tts:
+  - platform: google_translate
+    language: de
+
+# ============================================================================
+# INTEGRATIONS
+# ============================================================================
+
+# Tesla Integration (configure via UI)
+# Required: Tesla account credentials
+
+# Tibber Integration (configure via UI)
+# Required: Tibber API token from https://developer.tibber.com/
+
+# Easee Integration (configure via UI or HACS)
+# Required: Easee account credentials
+
+# ============================================================================
+# NOTIFICATIONS
+# ============================================================================
+
+notify:
+  - name: mobile_app
+    platform: group
+    services:
+      - service: mobile_app_your_device_name  # Replace with your device
+
+# ============================================================================
+# AUTOMATION & SCRIPTS
+# Note: These are included via the packages directory
+# ============================================================================
+
+# automation: !include automations.yaml
+# script: !include scripts.yaml
+# scene: !include scenes.yaml
+
+# ============================================================================
+# ADDITIONAL HELPERS
+# ============================================================================
+
+# Input text for storing calculated schedules
+input_text:
+  optimal_charging_schedule:
+    name: "Optimaler Ladezeitplan"
+    max: 255
+
+# ============================================================================
+# UTILITY METERS (Optional - for cost tracking)
+# ============================================================================
+
+utility_meter:
+  monthly_charging_energy:
+    source: sensor.easee_energy
+    cycle: monthly
+
+  daily_charging_energy:
+    source: sensor.easee_energy
+    cycle: daily
+
+# ============================================================================
+# SECRETS
+# Create a secrets.yaml file with the following:
+# ============================================================================
+# latitude: 48.8566
+# longitude: 2.3522
+# elevation: 50
+# db_url: sqlite:///config/home-assistant_v2.db
+# tibber_api_token: your_tibber_api_token_here
+# tesla_username: your_tesla_email
+# tesla_password: your_tesla_password
+# easee_username: your_easee_email
+# easee_password: your_easee_password
