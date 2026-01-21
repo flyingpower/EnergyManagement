@@ -1,0 +1,298 @@
+views:
+  - title: Energie Management
+    path: energie-management
+    icon: mdi:car-electric
+    badges: []
+    cards:
+      # ============================================================================
+      # STATUS OVERVIEW
+      # ============================================================================
+
+      - type: vertical-stack
+        title: Status Übersicht
+        cards:
+          # Current Charging Mode
+          - type: entities
+            entities:
+              - entity: sensor.aktueller_lademodus
+                name: Aktueller Modus
+                icon: mdi:state-machine
+              - entity: input_select.charging_state
+                name: Systemstatus
+              - entity: binary_sensor.auto_angeschlossen
+                name: Auto verbunden
+
+          # Key Metrics
+          - type: horizontal-stack
+            cards:
+              # Tesla SOC Gauge
+              - type: gauge
+                entity: sensor.tesla_ladestand
+                name: Ladestand
+                min: 0
+                max: 100
+                severity:
+                  green: 60
+                  yellow: 40
+                  red: 20
+
+              # Current Price
+              - type: gauge
+                entity: sensor.aktueller_strompreis
+                name: Strompreis
+                min: 0
+                max: 0.50
+                severity:
+                  green: 0
+                  yellow: 0.30
+                  red: 0.40
+                unit: EUR/kWh
+
+              # PV Surplus
+              - type: gauge
+                entity: sensor.verfugbarer_pv_uberschuss
+                name: PV-Überschuss
+                min: 0
+                max: 3000
+                severity:
+                  green: 1400
+                  yellow: 1000
+                  red: 0
+                unit: W
+
+          # Charging Power and Status
+          - type: entities
+            entities:
+              - entity: sensor.tesla_ladestatus
+                name: Tesla Status
+              - entity: sensor.easee_ladegerat_status
+                name: Ladegerät Status
+              - entity: sensor.aktuelle_ladeleistung
+                name: Aktuelle Leistung
+              - entity: sensor.berechneter_ladestrom_pv
+                name: Berechneter Strom (PV)
+              - entity: sensor.preisniveau
+                name: Aktuelles Preisniveau
+
+      # ============================================================================
+      # MANUAL CHARGING CONTROLS
+      # ============================================================================
+
+      - type: vertical-stack
+        title: Manueller Lademodus
+        cards:
+          - type: entities
+            entities:
+              - entity: input_boolean.manual_charging_mode
+                name: Manuellen Modus aktivieren
+
+          - type: conditional
+            conditions:
+              - entity: input_boolean.manual_charging_mode
+                state: "on"
+            card:
+              type: entities
+              entities:
+                - entity: input_number.manual_target_soc
+                  name: Ziel-Ladestand
+                - entity: input_datetime.manual_deadline
+                  name: Deadline
+                - entity: sensor.benotigte_energie_bis_ziel
+                  name: Benötigte Energie
+                - entity: sensor.geschatzte_ladedauer
+                  name: Geschätzte Dauer
+
+      # ============================================================================
+      # SETTINGS
+      # ============================================================================
+
+      - type: vertical-stack
+        title: Einstellungen
+        cards:
+          # Enable/Disable Features
+          - type: entities
+            title: Aktivierte Funktionen
+            entities:
+              - entity: input_boolean.enable_pv_charging
+                name: PV-Laden
+              - entity: input_boolean.enable_price_charging
+                name: Preisbasiertes Laden
+              - entity: input_boolean.enable_morning_readiness
+                name: Morgen-Bereitschaft
+
+          # Morning Readiness Settings
+          - type: entities
+            title: Morgen-Bereitschaft
+            entities:
+              - entity: input_number.target_soc_morning
+                name: Ziel-Ladestand (7:00 Uhr)
+              - entity: sensor.benotigte_energie_bis_ziel
+                name: Benötigte Energie
+              - entity: binary_sensor.morgenziel_erreichbar
+                name: Ziel erreichbar
+
+          # Price Thresholds
+          - type: entities
+            title: Preisschwellen
+            entities:
+              - entity: input_number.price_threshold_80
+                name: Schwelle für 80% Ladung
+              - entity: input_number.price_threshold_50
+                name: Schwelle für 50% Ladung
+              - entity: sensor.aktueller_strompreis
+                name: Aktueller Preis
+
+          # PV Charging Settings
+          - type: entities
+            title: PV-Laden Einstellungen
+            entities:
+              - entity: input_number.min_pv_surplus
+                name: Minimaler Überschuss
+              - entity: input_number.pv_charging_buffer
+                name: Sicherheitspuffer
+              - entity: input_number.pv_hysteresis_time
+                name: Hysterese-Zeit
+              - entity: sensor.verfugbarer_pv_uberschuss
+                name: Aktueller Überschuss
+
+      # ============================================================================
+      # DETAILED STATUS
+      # ============================================================================
+
+      - type: vertical-stack
+        title: Detaillierter Status
+        cards:
+          # Tesla Information
+          - type: entities
+            title: Tesla
+            entities:
+              - entity: sensor.tesla_ladestand
+                name: Ladestand
+              - entity: sensor.tesla_ladestatus
+                name: Status
+              - entity: sensor.model_3_battery_level
+                name: Batterie (Original)
+              - entity: sensor.model_3_charging
+                name: Ladezustand (Original)
+
+          # Easee Charger Information
+          - type: entities
+            title: Easee Ladegerät
+            entities:
+              - entity: sensor.easee_ladegerat_status
+                name: Status
+              - entity: sensor.aktuelle_ladeleistung
+                name: Leistung
+              - entity: sensor.garage_power
+                name: Leistung (Original kW)
+              - entity: sensor.garage_status
+                name: Status (Original)
+              - entity: sensor.garage_session_energy
+                name: Geladene Energie (kWh)
+
+          # Tibber Information
+          - type: entities
+            title: Tibber Energie
+            entities:
+              - entity: sensor.aktueller_strompreis
+                name: Aktueller Preis
+              - entity: sensor.preisniveau
+                name: Preisniveau
+              - entity: sensor.verfugbarer_pv_uberschuss
+                name: PV-Überschuss
+              - entity: sensor.tibber_power
+                name: Verbrauch (W)
+              - entity: sensor.tibber_power_production
+                name: Produktion (W)
+              - entity: sensor.tibber_electricity_price
+                name: Preis (Original)
+
+      # ============================================================================
+      # HISTORY & STATISTICS
+      # ============================================================================
+
+      - type: vertical-stack
+        title: Verlauf
+        cards:
+          # SOC History
+          - type: history-graph
+            title: Ladestand Verlauf (24h)
+            hours_to_show: 24
+            entities:
+              - entity: sensor.tesla_ladestand
+
+          # Charging Power History
+          - type: history-graph
+            title: Ladeleistung Verlauf (24h)
+            hours_to_show: 24
+            entities:
+              - entity: sensor.aktuelle_ladeleistung
+
+          # Price History
+          - type: history-graph
+            title: Strompreis Verlauf (24h)
+            hours_to_show: 24
+            entities:
+              - entity: sensor.aktueller_strompreis
+
+          # PV Surplus History
+          - type: history-graph
+            title: PV-Überschuss Verlauf (24h)
+            hours_to_show: 24
+            entities:
+              - entity: sensor.verfugbarer_pv_uberschuss
+
+          # Charging Mode History
+          - type: history-graph
+            title: Lademodus Verlauf (24h)
+            hours_to_show: 24
+            entities:
+              - entity: input_select.charging_state
+
+      # ============================================================================
+      # ALERTS & WARNINGS
+      # ============================================================================
+
+      - type: conditional
+        conditions:
+          - entity: binary_sensor.notladung_erforderlich
+            state: "on"
+        card:
+          type: markdown
+          content: |
+            ## ⚠️ Notladung erforderlich!
+
+            Der Ladestand ist kritisch niedrig ({{ states('sensor.tesla_ladestand') }}%).
+            Das System hat automatisch die Notladung aktiviert.
+
+      - type: conditional
+        conditions:
+          - entity: binary_sensor.morgenziel_erreichbar
+            state: "off"
+        card:
+          type: markdown
+          content: |
+            ## ⚠️ Morgenziel gefährdet
+
+            Das Fahrzeug wird morgen um 7:00 Uhr wahrscheinlich nicht
+            {{ states('input_number.target_soc_morning') }}% erreichen.
+
+            Aktueller Ladestand: {{ states('sensor.tesla_ladestand') }}%
+            Geschätzte Ladedauer: {{ states('sensor.geschatzte_ladedauer') }} Stunden
+
+      # ============================================================================
+      # QUICK ACTIONS
+      # ============================================================================
+
+      - type: entities
+        title: Schnellaktionen
+        entities:
+          - entity: script.adjust_pv_charging
+            name: PV-Ladung jetzt anpassen
+            icon: mdi:solar-power
+          - entity: script.start_emergency_charging
+            name: Notladung starten
+            icon: mdi:alert-circle
+          - entity: script.stop_charging
+            name: Ladung stoppen
+            icon: mdi:stop-circle

@@ -1,5 +1,6 @@
 # Energy Management System - Scripts
 # Charging control scripts called by automations
+# UPDATED with verified entity IDs
 
 script:
   # ============================================================================
@@ -73,8 +74,14 @@ script:
           current_soc: "{{ states('sensor.tesla_ladestand') | float(0) }}"
           target_soc: "{{ states('input_number.target_soc_morning') | float(80) }}"
           hours_needed: "{{ states('sensor.geschatzte_ladedauer') | float(0) }}"
-          prices_today: "{{ state_attr('sensor.tibber_prices', 'today') | default([]) }}"
-          prices_tomorrow: "{{ state_attr('sensor.tibber_prices', 'tomorrow') | default([]) }}"
+
+      # Retrieve Tibber prices using action
+      - service: tibber.get_prices
+        response_variable: tibber_prices
+
+      - variables:
+          prices_today: "{{ tibber_prices.prices_today | default([]) }}"
+          prices_tomorrow: "{{ tibber_prices.prices_tomorrow | default([]) }}"
 
       # Note: This is simplified. In production, use Python script or AppDaemon
       # for more complex price optimization logic

@@ -1,5 +1,6 @@
 # Energy Management System - Template Sensors
 # These sensors calculate values and provide status information
+# UPDATED with verified entity IDs
 
 template:
   - sensor:
@@ -111,14 +112,13 @@ template:
             mdi:battery
           {% endif %}
 
-      # Is Car Connected and at Home
+      # Car Connected Sensor (for templates that reference sensor.auto_angeschlossen)
       - name: "Auto Angeschlossen"
-        unique_id: energy_mgmt_car_connected
+        unique_id: energy_mgmt_car_connected_sensor
         state: >
-          {% set charging_state = states('sensor.model_3_charging') %}
-          {{ charging_state in ['Charging', 'Stopped', 'Complete'] }}
+          {{ is_state('binary_sensor.garage_cable_lock', 'off') }}
         icon: >
-          {% if is_state('binary_sensor.auto_angeschlossen', 'on') %}
+          {% if is_state('binary_sensor.garage_cable_lock', 'off') %}
             mdi:car-electric
           {% else %}
             mdi:car-off
@@ -219,14 +219,14 @@ template:
 
   - binary_sensor:
       # Car Connected Binary Sensor
+      # Using cable lock: when 'off', car is connected (cable unlocked and in use)
       - name: "Auto Angeschlossen"
         unique_id: energy_mgmt_car_connected_binary
         state: >
-          {% set charging_state = states('sensor.model_3_charging') %}
-          {{ charging_state in ['Charging', 'Stopped', 'Complete'] }}
+          {{ is_state('binary_sensor.garage_cable_lock', 'off') }}
         device_class: plug
         icon: >
-          {% if is_state('binary_sensor.auto_angeschlossen', 'on') %}
+          {% if is_state('binary_sensor.garage_cable_lock', 'off') %}
             mdi:power-plug
           {% else %}
             mdi:power-plug-off
