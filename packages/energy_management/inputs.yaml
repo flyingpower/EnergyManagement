@@ -61,15 +61,15 @@ input_number:
     icon: mdi:buffer
     initial: 200
 
-  # Hysteresis Time (minutes before stopping)
+  # Check Interval (how often to check/adjust PV charging)
   pv_hysteresis_time:
-    name: "PV Hysterese-Zeit"
+    name: "PV Prüfintervall"
     min: 1
-    max: 15
+    max: 10
     step: 1
     unit_of_measurement: "min"
     icon: mdi:timer-sand
-    initial: 5
+    initial: 1
 
 input_boolean:
   # Manual Charging Mode Toggle
@@ -96,6 +96,12 @@ input_boolean:
     icon: mdi:alarm
     initial: true
 
+  # Trigger Price Forecast Update
+  trigger_price_update:
+    name: "Preisprognose aktualisieren"
+    icon: mdi:refresh
+    initial: false
+
 input_datetime:
   # Manual Charging Deadline
   manual_deadline:
@@ -117,3 +123,12 @@ input_select:
       - "morning_readiness"
     initial: "idle"
     icon: mdi:state-machine
+
+  # Charging Control Method
+  charging_control_method:
+    name: "Ladesteuerung"
+    options:
+      - "tesla"
+      - "easee"
+    initial: "easee"
+    icon: mdi:cog

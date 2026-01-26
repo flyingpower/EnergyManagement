@@ -41,13 +41,15 @@ template:
         unique_id: energy_mgmt_available_pv_surplus
         unit_of_measurement: "W"
         device_class: power
+        state_class: measurement
         state: >
           {% set power_consumption = states('sensor.tibber_power') | float(0) %}
           {% set power_production = states('sensor.tibber_power_production') | float(0) %}
           {% set net_consumption = power_consumption - power_production %}
           {% set buffer = states('input_number.pv_charging_buffer') | float(200) %}
           {% if net_consumption < 0 %}
-            {{ (net_consumption | abs - buffer) | round(0) | max(0) }}
+            {% set surplus = (net_consumption | abs - buffer) | round(0) %}
+            {{ [surplus, 0] | max }}
           {% else %}
             0
           {% endif %}
@@ -61,8 +63,8 @@ template:
           {% set voltage = 230 %}
           {% set phases = 1 %}
           {% if surplus > 0 %}
-            {% set current = (surplus / (phases * voltage)) | round(0) %}
-            {{ current | int | max(6) | min(32) }}
+            {% set current = (surplus / (phases * voltage)) | round(0) | int %}
+            {{ [[current, 6] | max, 32] | min }}
           {% else %}
             0
           {% endif %}
@@ -169,7 +171,7 @@ template:
         state: >
           {% set current_soc = states('sensor.tesla_ladestand') | float(0) %}
           {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
-          {% set battery_capacity = 60 %}  {# Tesla Model 3 battery in kWh #}
+          {% set battery_capacity = 75 %}  {# Tesla Model 3 battery in kWh #}
           {% set efficiency_loss = 1.15 %}  {# 15% charging loss #}
           {% if target_soc > current_soc %}
             {{ (((target_soc - current_soc) / 100 * battery_capacity) * efficiency_loss) | round(2) }}
@@ -237,7 +239,7 @@ template:
         unique_id: energy_mgmt_emergency_needed
         state: >
           {% set soc = states('sensor.tesla_ladestand') | float(100) %}
-          {{ soc < 20 }}
+          {{ soc > 0 and soc < 20 }}
         device_class: problem
         icon: >
           {% if is_state('binary_sensor.notladung_erforderlich', 'on') %}

@@ -1,6 +1,6 @@
 # Energy Management System - Scripts
-# Charging control scripts called by automations
-# UPDATED with verified entity IDs
+# Charging control scripts with DUAL control methods (Tesla & Easee)
+# UPDATED with verified entity IDs and both control methods
 
 script:
   # ============================================================================
@@ -9,16 +9,16 @@ script:
 
   adjust_pv_charging:
     alias: "PV-Ladung anpassen"
-    description: "Passt den Ladestrom basierend auf verfügbarem PV-Überschuss an"
+    description: "Passt den Ladestrom basierend auf verfügbarem PV-Überschuss an (Easee)"
     sequence:
       - variables:
           surplus: "{{ states('sensor.verfugbarer_pv_uberschuss') | float(0) }}"
           min_surplus: "{{ states('input_number.min_pv_surplus') | float(1400) }}"
           calculated_current: "{{ states('sensor.berechneter_ladestrom_pv') | int(0) }}"
-          is_charging: "{{ states('sensor.model_3_charging') == 'Charging' }}"
+          is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
 
       - choose:
-          # Case 1: Surplus available and not charging - Start charging
+          # ========== CASE 1: Start Charging ==========
           - conditions:
               - condition: template
                 value_template: "{{ surplus >= min_surplus }}"
@@ -27,18 +27,26 @@ script:
               - condition: template
                 value_template: "{{ calculated_current >= 6 }}"
             sequence:
-              - service: number.set_value
-                target:
-                  entity_id: number.model_3_charge_current
+              # Force 1-phase mode for PV charging
+              - service: easee.set_charger_phase_mode
                 data:
-                  value: "{{ calculated_current }}"
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  phase_mode: "1_phase"
               - delay:
-                  seconds: 2
-              - service: switch.turn_on
-                target:
-                  entity_id: switch.model_3_charge
+                  seconds: 1
+              - service: easee.set_charger_dynamic_limit
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  current: "{{ calculated_current }}"
+                  time_to_live: 0
+              - delay:
+                  seconds: 1
+              - service: easee.action_command
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  action_command: "start"
 
-          # Case 2: Surplus available and charging - Adjust current
+          # ========== CASE 2: Adjust Current (Already Charging) ==========
           - conditions:
               - condition: template
                 value_template: "{{ surplus >= min_surplus }}"
@@ -47,13 +55,14 @@ script:
               - condition: template
                 value_template: "{{ calculated_current >= 6 }}"
             sequence:
-              - service: number.set_value
-                target:
-                  entity_id: number.model_3_charge_current
+              # Adjust charging current (1-phase mode already set)
+              - service: easee.set_charger_dynamic_limit
                 data:
-                  value: "{{ calculated_current }}"
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  current: "{{ calculated_current }}"
+                  time_to_live: 0
 
-          # Case 3: Insufficient surplus and charging - Stop charging
+          # ========== CASE 3: Stop Charging (Insufficient Surplus) ==========
           - conditions:
               - condition: template
                 value_template: "{{ surplus < min_surplus }}"
@@ -70,36 +79,34 @@ script:
     alias: "Optimale Ladezeiten berechnen"
     description: "Berechnet die günstigsten Stunden zum Laden basierend auf Tibber-Preisen"
     sequence:
-      - variables:
-          current_soc: "{{ states('sensor.tesla_ladestand') | float(0) }}"
-          target_soc: "{{ states('input_number.target_soc_morning') | float(80) }}"
-          hours_needed: "{{ states('sensor.geschatzte_ladedauer') | float(0) }}"
-
-      # Retrieve Tibber prices using action
+      # Retrieve Tibber prices for today and tomorrow
       - service: tibber.get_prices
+        data:
+          start: "{{ today_at('00:00:00') }}"
+          end: "{{ (now() + timedelta(days=1)).replace(hour=23, minute=59, second=59) }}"
         response_variable: tibber_prices
 
-      - variables:
-          prices_today: "{{ tibber_prices.prices_today | default([]) }}"
-          prices_tomorrow: "{{ tibber_prices.prices_tomorrow | default([]) }}"
+      # Fire event with price data to trigger sensor update
+      - event: tibber_prices_updated
+        event_data:
+          prices: "{{ tibber_prices.prices }}"
 
-      # Note: This is simplified. In production, use Python script or AppDaemon
-      # for more complex price optimization logic
-      - service: input_text.set_value
-        target:
-          entity_id: input_text.optimal_charging_schedule
+      # Log confirmation
+      - service: system_log.write
         data:
-          value: "Berechnung läuft..."
+          message: "Tibber prices updated via event"
+          level: info
 
   start_price_charging:
     alias: "Preisbasierte Ladung starten"
-    description: "Startet Ladung während günstiger Preisstunden"
+    description: "Startet Ladung während günstiger Preisstunden (Easee)"
     sequence:
       - variables:
           current_price: "{{ states('sensor.aktueller_strompreis') | float(0) }}"
           threshold_50: "{{ states('input_number.price_threshold_50') | float(0.30) }}"
           threshold_80: "{{ states('input_number.price_threshold_80') | float(0.28) }}"
           current_soc: "{{ states('sensor.tesla_ladestand') | float(0) }}"
+          is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
 
       - choose:
           # Very cheap - charge to 80%
@@ -109,19 +116,30 @@ script:
               - condition: template
                 value_template: "{{ current_soc < 80 }}"
             sequence:
-              - service: number.set_value
-                target:
-                  entity_id: number.model_3_charge_limit
-                data:
-                  value: 80
-              - service: number.set_value
-                target:
-                  entity_id: number.model_3_charge_current
-                data:
-                  value: 16  # Maximum current available
-              - service: switch.turn_on
-                target:
-                  entity_id: switch.model_3_charge
+              # Only set current when starting charging (not if already charging)
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ not is_charging }}"
+                    sequence:
+                      # Force 3-phase mode for grid charging
+                      - service: easee.set_charger_phase_mode
+                        data:
+                          device_id: 4997305f9b10ff58595e095f3bdf74cd
+                          phase_mode: "3_phase"
+                      - delay:
+                          seconds: 1
+                      - service: easee.set_charger_dynamic_limit
+                        data:
+                          device_id: 4997305f9b10ff58595e095f3bdf74cd
+                          current: 32
+                          time_to_live: 0
+                      - delay:
+                          seconds: 2
+                      - service: easee.action_command
+                        data:
+                          device_id: 4997305f9b10ff58595e095f3bdf74cd
+                          action_command: "start"
 
           # Cheap - charge to 50%
           - conditions:
@@ -130,37 +148,63 @@ script:
               - condition: template
                 value_template: "{{ current_soc < 50 }}"
             sequence:
-              - service: number.set_value
-                target:
-                  entity_id: number.model_3_charge_limit
-                data:
-                  value: 50
-              - service: number.set_value
-                target:
-                  entity_id: number.model_3_charge_current
-                data:
-                  value: 16
-              - service: switch.turn_on
-                target:
-                  entity_id: switch.model_3_charge
+              # Only set current when starting charging (not if already charging)
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ not is_charging }}"
+                    sequence:
+                      # Force 3-phase mode for grid charging
+                      - service: easee.set_charger_phase_mode
+                        data:
+                          device_id: 4997305f9b10ff58595e095f3bdf74cd
+                          phase_mode: "3_phase"
+                      - delay:
+                          seconds: 1
+                      - service: easee.set_charger_dynamic_limit
+                        data:
+                          device_id: 4997305f9b10ff58595e095f3bdf74cd
+                          current: 32
+                          time_to_live: 0
+                      - delay:
+                          seconds: 2
+                      - service: easee.action_command
+                        data:
+                          device_id: 4997305f9b10ff58595e095f3bdf74cd
+                          action_command: "start"
 
   start_emergency_morning_charge:
     alias: "Notladung für Morgenziel starten"
-    description: "Startet Notladung, um das Morgenziel zu erreichen"
+    description: "Startet Notladung, um das Morgenziel zu erreichen (Easee)"
     sequence:
-      - service: number.set_value
-        target:
-          entity_id: number.model_3_charge_limit
-        data:
-          value: "{{ states('input_number.target_soc_morning') | int }}"
-      - service: number.set_value
-        target:
-          entity_id: number.model_3_charge_current
-        data:
-          value: 16  # Maximum current for fastest charging
-      - service: switch.turn_on
-        target:
-          entity_id: switch.model_3_charge
+      - variables:
+          target_soc: "{{ states('input_number.target_soc_morning') | int }}"
+          is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
+
+      # Only set current when starting charging (not if already charging)
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ not is_charging }}"
+            sequence:
+              # Force 3-phase mode for fast grid charging
+              - service: easee.set_charger_phase_mode
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  phase_mode: "3_phase"
+              - delay:
+                  seconds: 1
+              - service: easee.set_charger_dynamic_limit
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  current: 32
+                  time_to_live: 0
+              - delay:
+                  seconds: 2
+              - service: easee.action_command
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  action_command: "start"
 
   # ============================================================================
   # MANUAL CHARGING SCRIPTS
@@ -168,7 +212,7 @@ script:
 
   execute_manual_charging:
     alias: "Manuelle Ladung ausführen"
-    description: "Führt manuelle Ladung mit intelligenter Planung aus"
+    description: "Führt manuelle Ladung mit intelligenter Planung aus (Easee)"
     sequence:
       - variables:
           current_soc: "{{ states('sensor.tesla_ladestand') | float(0) }}"
@@ -177,6 +221,7 @@ script:
           pv_surplus: "{{ states('sensor.verfugbarer_pv_uberschuss') | float(0) }}"
           current_price: "{{ states('sensor.aktueller_strompreis') | float(0) }}"
           min_pv: "{{ states('input_number.min_pv_surplus') | float(1400) }}"
+          is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
 
       - choose:
           # Already at target
@@ -198,19 +243,30 @@ script:
               - condition: template
                 value_template: "{{ current_soc < target_soc }}"
             sequence:
-              - service: number.set_value
-                target:
-                  entity_id: number.model_3_charge_limit
-                data:
-                  value: "{{ target_soc | int }}"
-              - service: number.set_value
-                target:
-                  entity_id: number.model_3_charge_current
-                data:
-                  value: 16
-              - service: switch.turn_on
-                target:
-                  entity_id: switch.model_3_charge
+              # Only set current when starting charging (not if already charging)
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: "{{ not is_charging }}"
+                    sequence:
+                      # Force 3-phase mode for grid charging (manual mode without PV)
+                      - service: easee.set_charger_phase_mode
+                        data:
+                          device_id: 4997305f9b10ff58595e095f3bdf74cd
+                          phase_mode: "3_phase"
+                      - delay:
+                          seconds: 1
+                      - service: easee.set_charger_dynamic_limit
+                        data:
+                          device_id: 4997305f9b10ff58595e095f3bdf74cd
+                          current: 32
+                          time_to_live: 0
+                      - delay:
+                          seconds: 2
+                      - service: easee.action_command
+                        data:
+                          device_id: 4997305f9b10ff58595e095f3bdf74cd
+                          action_command: "start"
 
   # ============================================================================
   # EMERGENCY CHARGING SCRIPTS
@@ -218,21 +274,36 @@ script:
 
   start_emergency_charging:
     alias: "Notladung starten"
-    description: "Startet Notladung bei kritischem Ladestand"
+    description: "Startet Notladung bei kritischem Ladestand (Easee)"
     sequence:
-      - service: number.set_value
-        target:
-          entity_id: number.model_3_charge_limit
-        data:
-          value: 80
-      - service: number.set_value
-        target:
-          entity_id: number.model_3_charge_current
-        data:
-          value: 16  # Maximum current
-      - service: switch.turn_on
-        target:
-          entity_id: switch.model_3_charge
+      - variables:
+          is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
+
+      # Only set current when starting charging (not if already charging)
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ not is_charging }}"
+            sequence:
+              # Force 3-phase mode for fast emergency charging
+              - service: easee.set_charger_phase_mode
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  phase_mode: "3_phase"
+              - delay:
+                  seconds: 1
+              - service: easee.set_charger_dynamic_limit
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  current: 32
+                  time_to_live: 0
+              - delay:
+                  seconds: 2
+              - service: easee.action_command
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  action_command: "start"
+
       - service: notify.mobile_app
         data:
           title: "🚨 Notladung aktiviert"
@@ -248,17 +319,73 @@ script:
 
   stop_charging:
     alias: "Ladung stoppen"
-    description: "Stoppt die Ladung und setzt den Zustand zurück"
+    description: "Stoppt die Ladung (nur Easee)"
     sequence:
-      - service: switch.turn_off
-        target:
-          entity_id: switch.model_3_charge
+      # Always use Easee to stop charging
+      - service: easee.action_command
+        data:
+          device_id: 4997305f9b10ff58595e095f3bdf74cd
+          action_command: "pause"
+      - delay:
+          milliseconds: 500
+      # Send pause again to ensure it worked
+      - service: easee.action_command
+        data:
+          device_id: 4997305f9b10ff58595e095f3bdf74cd
+          action_command: "pause"
+
       - delay:
           seconds: 2
       - condition: template
-        value_template: "{{ is_state('input_select.charging_state', 'manual') }}"
+        value_template: "{{ not is_state('input_select.charging_state', 'manual') }}"
       - service: input_select.select_option
         target:
           entity_id: input_select.charging_state
         data:
           option: "idle"
+
+  # ============================================================================
+  # DIAGNOSTIC SCRIPT
+  # ============================================================================
+
+  test_tibber_forecast:
+    alias: "Test: Tibber Forecast Laden"
+    description: "Manuell Tibber Preisprognose aktualisieren"
+    sequence:
+      - service: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.trigger_price_update
+      - delay:
+          seconds: 3
+      - service: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.trigger_price_update
+      - delay:
+          seconds: 5
+      - service: persistent_notification.create
+        data:
+          title: "Tibber Forecast Status"
+          message: |
+            **Sensor:** {{ states('sensor.tibber_preisprognose') }}
+            **Prices:** {{ state_attr('sensor.tibber_preisprognose', 'prices_today') | length if state_attr('sensor.tibber_preisprognose', 'prices_today') else 'NO DATA' }} Einträge
+            **Last Update:** {{ state_attr('sensor.tibber_preisprognose', 'last_update') }}
+
+  test_store_prices_manually:
+    alias: "Test: Store Prices Manually"
+    sequence:
+      - service: tibber.get_prices
+        response_variable: resp
+      - service: input_text.set_value
+        target:
+          entity_id: input_text.optimal_charging_schedule
+        data:
+          value: "{{ resp | tojson }}"
+      - delay:
+          seconds: 2
+      - service: persistent_notification.create
+        data:
+          title: "Manual Store Test"
+          message: |
+            Stored {{ states('input_text.optimal_charging_schedule') | length }} chars
+            
+            First 150: {{ states('input_text.optimal_charging_schedule')[:150] }}

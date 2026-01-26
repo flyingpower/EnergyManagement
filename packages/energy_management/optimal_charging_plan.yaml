@@ -1,0 +1,138 @@
+# Optimal Charging Plan Calculator
+# Calculates the cheapest hours to charge to meet morning target
+
+template:
+  - sensor:
+      # Calculate optimal charging plan based on prices and morning target
+      - name: "Optimaler Ladeplan"
+        unique_id: optimal_charging_plan
+        state: "{{ now().isoformat() }}"
+        attributes:
+          # Calculate charging plan
+          charging_plan: >
+            {% set current_soc = states('sensor.tesla_ladestand') | float(0) %}
+            {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
+            {% set threshold_80 = states('input_number.price_threshold_80') | float(0.28) %}
+            {% set threshold_50 = states('input_number.price_threshold_50') | float(0.30) %}
+            {% set charging_power = 11.04 %}  {# 3-phase, 16A = 3 * 230V * 16A = 11.04 kW #}
+            {% set battery_capacity = 75 %}  {# kWh #}
+            {% set soc_per_hour = (charging_power / battery_capacity * 100) | round(1) %}
+
+            {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') %}
+            {% set now_time = now() %}
+            {% set target_time = now_time.replace(hour=7, minute=0, second=0) %}
+            {% if now_time.hour >= 7 %}
+              {% set target_time = target_time + timedelta(days=1) %}
+            {% endif %}
+
+            {% if prices and prices is iterable %}
+              {# Build list of available hours until 7:00 AM with prices #}
+              {% set available_hours = namespace(list=[]) %}
+              {% for price in prices %}
+                {% set price_time = price.startsAt | as_datetime | as_local %}
+                {% if price_time > now_time and price_time <= target_time %}
+                  {% set available_hours.list = available_hours.list + [{
+                    'time': price_time,
+                    'hour': price_time.hour,
+                    'price': price.total | float
+                  }] %}
+                {% endif %}
+              {% endfor %}
+
+              {# Calculate hours needed to reach target #}
+              {% set soc_deficit = target_soc - current_soc %}
+              {% set hours_needed = (soc_deficit / soc_per_hour) | round(0, 'ceil') | int %}
+              {% set hours_needed = [hours_needed, 0] | max %}
+              {% set hours_needed = [hours_needed, available_hours.list | length] | min %}
+
+              {# Sort hours by price and select cheapest N hours #}
+              {% set sorted_hours = available_hours.list | sort(attribute='price') %}
+              {% set selected_hours = sorted_hours[:hours_needed] %}
+              {% set selected_hour_nums = selected_hours | map(attribute='hour') | list %}
+
+              {# Build plan for ALL hours in price forecast #}
+              {% set plan = namespace(list=[]) %}
+              {% set soc = namespace(value=current_soc) %}
+
+              {% for price in prices %}
+                {% set price_time = price.startsAt | as_datetime | as_local %}
+                {% set price_hour = price_time.hour %}
+                {% set price_val = price.total | float %}
+
+                {# Determine if we should charge this hour #}
+                {% set should_charge = false %}
+                {% set charge_reason = 'none' %}
+
+                {# Check opportunistic charging thresholds #}
+                {% if price_val <= threshold_80 and soc.value < 80 %}
+                  {% set should_charge = true %}
+                  {% set charge_reason = 'price_80' %}
+                {% elif price_val <= threshold_50 and soc.value < 50 %}
+                  {% set should_charge = true %}
+                  {% set charge_reason = 'price_50' %}
+                {# Check if this hour is in optimal plan for morning target #}
+                {% elif price_hour in selected_hour_nums and price_time > now_time and price_time <= target_time %}
+                  {% set should_charge = true %}
+                  {% set charge_reason = 'morning_target' %}
+                {% endif %}
+
+                {# Update SoC if charging #}
+                {% if should_charge %}
+                  {% set soc.value = [soc.value + soc_per_hour, 80] | min %}
+                {% endif %}
+
+                {% set plan.list = plan.list + [{
+                  'hour': price_hour,
+                  'time': price_time.strftime('%H:%M'),
+                  'datetime': price_time.isoformat(),
+                  'price': price_val,
+                  'should_charge': should_charge,
+                  'charge_reason': charge_reason,
+                  'soc_end': soc.value | round(0)
+                }] %}
+              {% endfor %}
+
+              {{ plan.list }}
+            {% else %}
+              []
+            {% endif %}
+
+          # Hours needed to reach morning target
+          hours_needed: >
+            {% set current_soc = states('sensor.tesla_ladestand') | float(0) %}
+            {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
+            {% set charging_power = 11.04 %}
+            {% set battery_capacity = 75 %}
+            {% set soc_per_hour = (charging_power / battery_capacity * 100) %}
+            {% set soc_deficit = target_soc - current_soc %}
+            {% set hours_needed = (soc_deficit / soc_per_hour) | round(0, 'ceil') | int %}
+            {{ [hours_needed, 0] | max }}
+
+          # Next charging hour
+          next_charging_hour: >
+            {% set plan = state_attr('sensor.optimaler_ladeplan', 'charging_plan') %}
+            {% set now_time = now() %}
+            {% if plan and plan is iterable %}
+              {% for hour in plan %}
+                {% set hour_time = hour.datetime | as_datetime %}
+                {% if hour.should_charge and hour_time > now_time %}
+                  {{ hour.time }}
+                  {% break %}
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+
+          # Should charge now
+          should_charge_now: >
+            {% set plan = state_attr('sensor.optimaler_ladeplan', 'charging_plan') %}
+            {% set now_hour = now().hour %}
+            {% if plan and plan is iterable %}
+              {% for hour in plan %}
+                {% if hour.hour == now_hour %}
+                  {{ hour.should_charge }}
+                  {% break %}
+                {% endif %}
+              {% endfor %}
+            {% else %}
+              false
+            {% endif %}

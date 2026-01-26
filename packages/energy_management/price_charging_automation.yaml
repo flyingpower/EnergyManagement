@@ -1,0 +1,105 @@
+# Price-Based Charging Execution
+# Automatically starts/stops charging based on optimal plan
+
+automation:
+  # Execute optimal charging plan every hour
+  - id: energy_mgmt_execute_price_plan
+    alias: "Energie Management - Preisplan ausführen"
+    description: "Startet/stoppt Ladung basierend auf optimalem Preisplan"
+    trigger:
+      # Check at the start of every hour
+      - platform: time_pattern
+        minutes: "0"
+      # Also check when plan updates
+      - platform: state
+        entity_id: sensor.optimaler_ladeplan
+    condition:
+      # Only execute if price-based charging is enabled
+      - condition: state
+        entity_id: input_boolean.enable_price_charging
+        state: "on"
+      # Car must be connected
+      - condition: state
+        entity_id: binary_sensor.auto_angeschlossen
+        state: "on"
+      # Not in manual mode
+      - condition: state
+        entity_id: input_boolean.manual_charging_mode
+        state: "off"
+      # Not in emergency mode
+      - condition: state
+        entity_id: binary_sensor.notladung_erforderlich
+        state: "off"
+    mode: restart
+    action:
+      - variables:
+          should_charge: "{{ state_attr('sensor.optimaler_ladeplan', 'should_charge_now') | default(false) }}"
+          is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
+          current_soc: "{{ states('sensor.tesla_ladestand') | float(0) }}"
+
+      - choose:
+          # Should charge and not charging -> Start
+          - conditions:
+              - condition: template
+                value_template: "{{ should_charge == true or should_charge == 'True' }}"
+              - condition: template
+                value_template: "{{ not is_charging }}"
+            sequence:
+              - service: input_select.select_option
+                target:
+                  entity_id: input_select.charging_state
+                data:
+                  option: "price"
+              # Force 3-phase mode for grid charging
+              - service: easee.set_charger_phase_mode
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  phase_mode: "3_phase"
+              - delay:
+                  seconds: 1
+              # Set charging current to 16A (3-phase)
+              - service: easee.set_charger_dynamic_limit
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  current: 16
+                  time_to_live: 0
+              - delay:
+                  seconds: 2
+              - service: easee.action_command
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  action_command: "start"
+              - service: system_log.write
+                data:
+                  message: "Price charging started: SoC={{ current_soc }}%"
+                  level: info
+
+          # Should not charge and is charging -> Stop
+          - conditions:
+              - condition: template
+                value_template: "{{ should_charge == false or should_charge == 'False' }}"
+              - condition: template
+                value_template: "{{ is_charging }}"
+              - condition: state
+                entity_id: input_select.charging_state
+                state: "price"
+            sequence:
+              - service: script.stop_charging
+              - service: system_log.write
+                data:
+                  message: "Price charging stopped: SoC={{ current_soc }}%"
+                  level: info
+
+  # Update plan every hour
+  - id: energy_mgmt_update_price_plan
+    alias: "Energie Management - Preisplan aktualisieren"
+    description: "Aktualisiert den optimalen Ladeplan stündlich"
+    trigger:
+      - platform: time_pattern
+        minutes: "5"  # Run 5 minutes after the hour
+      - platform: state
+        entity_id: sensor.tibber_preisprognose
+    action:
+      - service: homeassistant.update_entity
+        target:
+          entity_id: sensor.optimaler_ladeplan

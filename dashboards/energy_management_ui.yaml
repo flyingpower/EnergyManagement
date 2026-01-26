@@ -250,6 +250,95 @@ views:
               - entity: input_select.charging_state
 
       # ============================================================================
+      # CHARGING PLAN FORECAST
+      # ============================================================================
+
+      - type: vertical-stack
+        title: Ladeplan & Preisprognose
+        cards:
+          # Next Charging Window
+          - type: markdown
+            title: Nächstes Ladefenster
+            content: >
+              {% set next_hour = state_attr('sensor.optimaler_ladeplan', 'next_charging_hour') %}
+              {% set hours_needed = state_attr('sensor.optimaler_ladeplan', 'hours_needed') %}
+              {% set should_charge = state_attr('sensor.optimaler_ladeplan', 'should_charge_now') %}
+
+              **Status:** {% if should_charge == true or should_charge == 'True' %}🟢 Lädt jetzt{% else %}⚪ Wartet{% endif %}
+
+              **Nächste Ladung:** {{ next_hour if next_hour else 'Nicht geplant' }}
+
+              **Benötigte Stunden:** {{ hours_needed if hours_needed else 0 }} h bis Morgenziel
+
+              **Sonnenstunden heute:** {{ states('sensor.sonnenstunden_prognose') }} h
+
+              **PV-Prognose (6h):** {{ states('sensor.pv_prognose_nachste_stunden') }} kWh
+
+          # Optimal Charging Plan Timetable
+          - type: markdown
+            title: Optimaler Ladeplan (bis Prognoseende)
+            content: >
+              {% set plan = state_attr('sensor.optimaler_ladeplan', 'charging_plan') %}
+              {% set solar_forecast = state_attr('sensor.solar_prognose_stundlich', 'hourly_forecast') %}
+              {% if plan is none or plan | length == 0 %}
+                **Keine Daten verfügbar**
+
+                Bitte "Preisprognose aktualisieren" ausführen um Tibber-Preise zu laden.
+              {% else %}
+                {% set now_time = now() %}
+                {% set target_time = states('input_number.target_soc_morning') | float(80) %}
+
+                | Zeit | Preis | Laden | SoC | PV | Grund |
+                |------|-------|-------|-----|-----|-------|
+                {% for hour in plan %}
+                  {% set hour_time = hour.datetime | as_datetime %}
+                  {% if hour_time >= now_time %}
+                    {# Find matching solar forecast #}
+                    {% set pv_production = namespace(value=0) %}
+                    {% if solar_forecast is not none and solar_forecast is iterable %}
+                      {% for solar in solar_forecast %}
+                        {% if solar.hour == hour.hour %}
+                          {% set pv_production.value = solar.kw %}
+                        {% endif %}
+                      {% endfor %}
+                    {% endif %}
+
+                    {# Charging indicator #}
+                    {% set charge_icon = '🟢' if hour.should_charge else '⚪' %}
+
+                    {# Charge reason display #}
+                    {% set reason = 'Sehr günstig' if hour.charge_reason == 'price_80' else 'Günstig' if hour.charge_reason == 'price_50' else 'Morgenziel' if hour.charge_reason == 'morning_target' else '-' %}
+
+                    | {{ hour.time }} | {{ hour.price | round(3) }} € | {{ charge_icon }} | {{ hour.soc_end }}% | {{ pv_production.value | round(1) }} kW | {{ reason }} |
+                  {% endif %}
+                {% endfor %}
+
+                **Legende:**
+                - 🟢 = Ladung geplant
+                - ⚪ = Keine Ladung
+                - SoC = Erwarteter Ladestand am Ende der Stunde
+                - PV = Solarprognose für diese Stunde
+                - Grund: Sehr günstig (≤{{ states('input_number.price_threshold_80') }}€), Günstig (≤{{ states('input_number.price_threshold_50') }}€), Morgenziel ({{ target_time }}% bis 7:00)
+              {% endif %}
+
+          # Current Forecast Status
+          - type: entities
+            title: Prognose-Status
+            entities:
+              - entity: sensor.tesla_ladestand
+                name: Aktueller Ladestand
+              - entity: sensor.aktueller_strompreis
+                name: Aktueller Preis
+              - entity: input_number.price_threshold_80
+                name: Preisschwelle
+              - entity: input_number.target_soc_morning
+                name: Ziel-Ladestand
+              - entity: sensor.benotigte_energie_bis_ziel
+                name: Benötigte Energie
+              - entity: sensor.geschatzte_ladedauer
+                name: Geschätzte Ladedauer
+
+      # ============================================================================
       # ALERTS & WARNINGS
       # ============================================================================
 

@@ -14,6 +14,9 @@ This Home Assistant configuration provides automated charging control for Tesla 
 
 - ✅ Dynamic PV surplus charging with automatic power adjustment
 - ✅ Price optimization using Tibber hourly rates
+- ✅ Solar production forecast integration with Forecast.Solar
+- ✅ Visual charging plan showing price, solar, and SOC forecast
+- ✅ Dual control support (Tesla API and Easee charger)
 - ✅ Morning readiness guarantee (car ready by 7 AM)
 - ✅ Manual charging mode with deadline support
 - ✅ Emergency charging for critical battery levels
@@ -176,6 +179,75 @@ After all files are in place:
 1. Uncomment the Lovelace section in `configuration.yaml`
 2. Restart Home Assistant
 3. Dashboard will be available at `/lovelace/energie-management`
+
+### 8. Setup Solar Forecast (Optional)
+
+For visual charging plan with solar production forecast:
+
+1. **Install Forecast.Solar integration:**
+   - Configuration → Integrations → Add Integration
+   - Search for "Forecast.Solar"
+   - Enter your PV system details (location: 72184 Eutingen im Gäu, azimuth, declination, kWp)
+
+2. **Verify sensors created:**
+   - `sensor.solar_prognose_stundlich`
+   - `sensor.sonnenstunden_prognose`
+   - `sensor.ladeplan_mit_solarprognose`
+
+3. **See detailed setup instructions:**
+   - Read `/config/SOLAR_FORECAST_SETUP_GUIDE.md`
+
+The dashboard will show a combined table with:
+- Hourly electricity prices
+- Sunshine forecast (☀️/☁️)
+- Expected PV production (kW)
+- Charging source selection (PV vs Grid)
+- Expected SOC progression
+
+## Charging Plan Visualization
+
+The dashboard includes an intelligent charging plan forecast table that shows:
+
+### What You'll See
+
+| Uhrzeit | Preis | Sonne | PV | Quelle | SoC |
+|---------|-------|-------|-------|--------|-----|
+| 14:00 | 0.342 EUR | ☀️ | 1.2 kW | ⏸️ Aus | 65% |
+| 15:00 | 0.351 EUR | ☀️ | 0.8 kW | ⏸️ Aus | 65% |
+| 18:00 | 0.278 EUR | ☁️ | 0.0 kW | 🔌 Netz | 77% |
+| 19:00 | 0.265 EUR | ☁️ | 0.0 kW | 🔌 Netz | 89% |
+
+### Column Descriptions
+
+- **Uhrzeit** - Hour of the day
+- **Preis** - Tibber electricity price forecast (EUR/kWh)
+- **Sonne** - Sunshine indicator (☀️ sunny / ☁️ cloudy)
+- **PV** - Expected solar production (kW)
+- **Quelle** - Charging source decision:
+  - ☀️ PV = Charge from solar surplus (production > 1.4 kW)
+  - 🔌 Netz = Charge from grid (price below threshold)
+  - ⏸️ Aus = Don't charge (expensive & no solar)
+- **SoC** - Expected battery state of charge progression
+
+### How It Works
+
+The system combines three data sources:
+
+1. **Tibber Price Forecast** - Retrieved daily at 13:05 from Tibber API
+2. **Forecast.Solar Production** - Updated hourly with expected PV output
+3. **Your Settings** - Price thresholds, target SOC, current battery level
+
+The forecast calculates the optimal charging plan:
+- Prioritizes free solar energy when available
+- Uses cheap grid hours to ensure morning readiness
+- Shows expected SOC progression hour by hour
+- Updates automatically when you change settings
+
+**Note:** This is a *forecast* based on current data. Actual charging follows real-time conditions (live PV surplus, actual prices, manual overrides).
+
+For detailed setup instructions, see:
+- `/config/CHARGING_PLAN_VISUALIZATION_GUIDE.md` - Price & SOC forecast setup
+- `/config/SOLAR_FORECAST_SETUP_GUIDE.md` - Solar forecast integration
 
 ## Configuration
 
@@ -455,6 +527,20 @@ For issues or questions:
 This configuration is provided as-is for personal use.
 
 ## Changelog
+
+### Version 1.2.0 (2026-01-21)
+- Added solar production forecast integration (Forecast.Solar)
+- Added visual charging plan with price, solar, and SOC forecast
+- Combined dashboard table showing intelligent charging source selection
+- Sunshine hours forecast for location 72184 Eutingen im Gäu
+- Automatic PV vs Grid charging decision display
+
+### Version 1.1.0 (2026-01-20)
+- Added dual control support (Tesla API and Easee charger)
+- Added charging control method selector in dashboard
+- Added Tibber price forecast visualization
+- Added planned charging hours calculation
+- Added next charging window prediction
 
 ### Version 1.0.0 (2026-01-19)
 - Initial release

@@ -12,14 +12,12 @@ automation:
     description: "Hauptsteuerung für alle Ladeszenarien mit Prioritätsverwaltung"
     trigger:
       - platform: time_pattern
-        minutes: "/5"  # Every 5 minutes
+        minutes: "/1"  # Every 1 minute - change to "/2" or "/5" for slower response
       - platform: state
         entity_id: input_boolean.manual_charging_mode
       - platform: state
-        entity_id: sensor.model_3_charging
-      - platform: state
-        entity_id: sensor.tibber_power
-    mode: single
+        entity_id: sensor.garage_status
+    mode: restart  # Restart if triggered while running
     action:
       - choose:
           # Priority 1: Emergency Charging (SOC < 20%)
@@ -57,8 +55,16 @@ automation:
           # Priority 3: PV Surplus Charging
           - conditions:
               - condition: state
-                entity_id: sensor.pv_laden_sollzustand
-                state: "true"
+                entity_id: input_boolean.enable_pv_charging
+                state: "on"
+              - condition: state
+                entity_id: binary_sensor.auto_angeschlossen
+                state: "on"
+              - condition: template
+                value_template: >
+                  {% set surplus = states('sensor.verfugbarer_pv_uberschuss') | float(0) %}
+                  {% set min_surplus = states('input_number.min_pv_surplus') | float(1400) %}
+                  {{ surplus >= min_surplus }}
             sequence:
               - service: input_select.select_option
                 target:
@@ -92,8 +98,9 @@ automation:
               entity_id: input_select.charging_state
             data:
               option: "idle"
-          - condition: template
-            value_template: "{{ states('sensor.model_3_charging') == 'Charging' }}"
+          - condition: state
+            entity_id: sensor.garage_status
+            state: "charging"
           - service: script.stop_charging
 
   # ============================================================================
@@ -216,17 +223,37 @@ automation:
           entity_id: input_boolean.manual_charging_mode
       - service: script.stop_charging
 
+  - id: energy_mgmt_manual_mode_disabled
+    alias: "Energie Management - Manueller Modus deaktiviert"
+    description: "Stoppt Ladung wenn manueller Modus ausgeschaltet wird"
+    trigger:
+      - platform: state
+        entity_id: input_boolean.manual_charging_mode
+        to: "off"
+    condition:
+      # Only stop if Easee is actually charging
+      - condition: state
+        entity_id: sensor.garage_status
+        state: "charging"
+    action:
+      - service: script.stop_charging
+      - service: input_select.select_option
+        target:
+          entity_id: input_select.charging_state
+        data:
+          option: "idle"
+
   # ============================================================================
   # NOTIFICATIONS
   # ============================================================================
 
   - id: energy_mgmt_charging_started
     alias: "Energie Management - Benachrichtigung Ladung gestartet"
-    description: "Sendet Benachrichtigung beim Ladestart"
+    description: "Sendet Benachrichtigung beim Ladestart (Easee)"
     trigger:
       - platform: state
-        entity_id: sensor.model_3_charging
-        to: "Charging"
+        entity_id: sensor.garage_status
+        to: "charging"
     action:
       - service: notify.mobile_app
         data:
@@ -242,11 +269,11 @@ automation:
 
   - id: energy_mgmt_charging_completed
     alias: "Energie Management - Benachrichtigung Ladung abgeschlossen"
-    description: "Sendet Benachrichtigung beim Ladeende"
+    description: "Sendet Benachrichtigung beim Ladeende (Easee)"
     trigger:
       - platform: state
-        entity_id: sensor.model_3_charging
-        to: "Complete"
+        entity_id: sensor.garage_status
+        to: "completed"
     action:
       - service: notify.mobile_app
         data:
@@ -283,11 +310,11 @@ automation:
 
   - id: energy_mgmt_car_disconnected
     alias: "Energie Management - Auto getrennt"
-    description: "Stoppt Ladung, wenn Auto getrennt wird"
+    description: "Stoppt Ladung, wenn Auto getrennt wird (Easee)"
     trigger:
       - platform: state
-        entity_id: sensor.model_3_charging
-        to: "Disconnected"
+        entity_id: sensor.garage_status
+        to: "disconnected"
     action:
       - service: input_select.select_option
         target:
@@ -300,6 +327,37 @@ automation:
       - service: input_boolean.turn_off
         target:
           entity_id: input_boolean.manual_charging_mode
+
+  - id: energy_mgmt_car_connected
+    alias: "Energie Management - Auto angeschlossen"
+    description: "Verhindert automatisches Laden beim Anschließen (Easee)"
+    trigger:
+      # Trigger when Easee goes to "ready" or "charging"
+      - platform: state
+        entity_id: sensor.garage_status
+        to: "ready"
+      - platform: state
+        entity_id: sensor.garage_status
+        to: "charging"
+    condition:
+      # Only proceed if we're in idle state (not in an active charging mode)
+      - condition: state
+        entity_id: input_select.charging_state
+        state: "idle"
+    mode: restart
+    action:
+      # Immediately pause the Easee charger to prevent auto-start
+      - service: easee.action_command
+        data:
+          device_id: 4997305f9b10ff58595e095f3bdf74cd
+          action_command: "pause"
+      # Wait briefly and send pause again to ensure it worked
+      - delay:
+          milliseconds: 500
+      - service: easee.action_command
+        data:
+          device_id: 4997305f9b10ff58595e095f3bdf74cd
+          action_command: "pause"
 
   - id: energy_mgmt_integration_error
     alias: "Energie Management - Integrationsfehler"

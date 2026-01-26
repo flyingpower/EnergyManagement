@@ -1,0 +1,140 @@
+# Charging Plan Visualization Sensors
+# These sensors calculate and display the charging plan forecast
+
+template:
+  - trigger:
+      - platform: event
+        event_type: tibber_prices_updated
+    sensor:
+      - name: "Tibber Preisprognose"
+        unique_id: tibber_price_forecast
+        state: "{{ now().isoformat() }}"
+        attributes:
+          prices_today: >
+            {% if trigger.event.data.prices is defined %}
+              {% set prices_dict = trigger.event.data.prices %}
+              {% set home_key = prices_dict.keys() | list | first %}
+              {% set home_prices = prices_dict[home_key] %}
+              {% set ns = namespace(result=[]) %}
+              {% for price in home_prices %}
+                {% set ns.result = ns.result + [{
+                  'startsAt': price.start_time,
+                  'total': price.price,
+                  'level': price.level
+                }] %}
+              {% endfor %}
+              {{ ns.result }}
+            {% else %}
+              {{ this.attributes.get('prices_today', []) }}
+            {% endif %}
+          prices_tomorrow: "{{ [] }}"
+          last_update: "{{ now().isoformat() }}"
+
+  - sensor:
+
+      # Calculate planned charging hours based on price thresholds
+      - name: "Geplante Ladestunden"
+        unique_id: planned_charging_hours
+        state: >
+          {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') | default([]) %}
+          {% set threshold = states('input_number.price_threshold_80') | float(0.28) %}
+          {% set charging_hours = namespace(count=0) %}
+          {% for price in prices %}
+            {% if price.total | float <= threshold %}
+              {% set charging_hours.count = charging_hours.count + 1 %}
+            {% endif %}
+          {% endfor %}
+          {{ charging_hours.count }}
+        attributes:
+          # List of hours when charging is planned (price below threshold)
+          charging_schedule: >
+            {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') | default([]) %}
+            {% set threshold = states('input_number.price_threshold_80') | float(0.28) %}
+            {% set schedule = [] %}
+            {% for price in prices %}
+              {% if price.total | float <= threshold %}
+                {% set schedule = schedule + [price.startsAt] %}
+              {% endif %}
+            {% endfor %}
+            {{ schedule }}
+          # Price forecast for next 24 hours
+          price_forecast: >
+            {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') | default([]) %}
+            {% set schedule = [] %}
+            {% for price in prices %}
+              {% set schedule = schedule + [{
+                'time': price.startsAt,
+                'price': price.total | float,
+                'level': price.level
+              }] %}
+            {% endfor %}
+            {{ schedule }}
+
+      # Calculate expected SOC development
+      - name: "Geplante SOC-Entwicklung"
+        unique_id: planned_soc_development
+        state: >
+          {% set current_soc = states('sensor.tesla_ladestand') | float(0) %}
+          {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
+          {{ target_soc }}
+        unit_of_measurement: "%"
+        attributes:
+          # Calculate SOC for each hour based on charging plan
+          soc_forecast: >
+            {% set current_soc = states('sensor.tesla_ladestand') | float(0) %}
+            {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
+            {% set charging_power = 7.4 %}  {# kW #}
+            {% set battery_capacity = 75 %}  {# kWh #}
+            {% set soc_per_hour = (charging_power / battery_capacity * 100) | round(1) %}
+            {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') | default([]) %}
+            {% set threshold = states('input_number.price_threshold_80') | float(0.28) %}
+            {% set forecast = [] %}
+            {% set soc = namespace(value=current_soc) %}
+            {% for price in prices %}
+              {% if price.total | float <= threshold and soc.value < target_soc %}
+                {% set soc.value = [soc.value + soc_per_hour, target_soc] | min %}
+              {% endif %}
+              {% set forecast = forecast + [{
+                'time': price.startsAt,
+                'soc': soc.value | round(1)
+              }] %}
+            {% endfor %}
+            {{ forecast }}
+          current_soc: "{{ states('sensor.tesla_ladestand') | float(0) }}"
+          target_soc: "{{ states('input_number.target_soc_morning') | float(80) }}"
+          soc_per_hour: >
+            {% set charging_power = 7.4 %}
+            {% set battery_capacity = 75 %}
+            {{ (charging_power / battery_capacity * 100) | round(1) }}
+
+      # Next charging window (when will charging start)
+      - name: "Nächstes Ladefenster"
+        unique_id: next_charging_window
+        state: >
+          {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') | default([]) %}
+          {% set threshold = states('input_number.price_threshold_80') | float(0.28) %}
+          {% set now_hour = now().hour %}
+          {% for price in prices %}
+            {% set price_time = price.startsAt | as_datetime %}
+            {% if price_time.hour >= now_hour and price.total | float <= threshold %}
+              {{ price.startsAt | as_datetime | as_local }}
+              {% break %}
+            {% endif %}
+          {% endfor %}
+        attributes:
+          price: >
+            {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') | default([]) %}
+            {% set threshold = states('input_number.price_threshold_80') | float(0.28) %}
+            {% set now_hour = now().hour %}
+            {% for price in prices %}
+              {% set price_time = price.startsAt | as_datetime %}
+              {% if price_time.hour >= now_hour and price.total | float <= threshold %}
+                {{ price.total | float | round(4) }}
+                {% break %}
+              {% endif %}
+            {% endfor %}
+          duration_hours: >
+            {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') | default([]) %}
+            {% set threshold = states('input_number.price_threshold_80') | float(0.28) %}
+            {% set hours_needed = states('sensor.geschatzte_ladedauer') | float(0) %}
+            {{ hours_needed | round(1) }}

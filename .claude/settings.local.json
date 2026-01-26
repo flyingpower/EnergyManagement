@@ -180,7 +180,13 @@
       "Bash(jq:*)",
       "Bash(open http://localhost:8080/swagger-ui/)",
       "Bash(echo:*)",
-      "Bash(claude config:*)"
+      "Bash(claude config:*)",
+      "Bash(ssh:*)",
+      "Bash(ha core restart:*)",
+      "Bash(ha core check:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(ha-cli state get:*)"
     ],
     "deny": [],
     "ask": []

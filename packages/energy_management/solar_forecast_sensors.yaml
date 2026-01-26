@@ -1,0 +1,162 @@
+# Solar Forecast Sensors for Eutingen im Gäu
+# Integrates with Forecast.Solar for PV production forecast
+
+template:
+  - sensor:
+      # Extract hourly solar forecast for visualization
+      - name: "Solar Prognose Stündlich"
+        unique_id: solar_forecast_hourly
+        state: "{{ now().isoformat() }}"
+        attributes:
+          # Extract forecast data from Forecast.Solar integration
+          hourly_forecast: >
+            {% set forecast_sensor = 'sensor.energy_production_today' %}
+            {% if states(forecast_sensor) != 'unknown' %}
+              {% set forecast = state_attr(forecast_sensor, 'wh_hours') | default({}) %}
+              {% set hourly = [] %}
+              {% for timestamp, watt_hours in forecast.items() %}
+                {% set time = timestamp | as_datetime | as_local %}
+                {% set hourly = hourly + [{
+                  'time': time.isoformat(),
+                  'hour': time.hour,
+                  'wh': watt_hours | int,
+                  'kw': (watt_hours / 1000) | round(2)
+                }] %}
+              {% endfor %}
+              {{ hourly }}
+            {% else %}
+              []
+            {% endif %}
+
+      # Sunshine hours forecast (calculated from solar data)
+      - name: "Sonnenstunden Prognose"
+        unique_id: sunshine_hours_forecast
+        state: >
+          {% set forecast = state_attr('sensor.solar_prognose_stundlich', 'hourly_forecast') %}
+          {% if forecast is not none and forecast is iterable and forecast | length > 0 %}
+            {% set sunshine_hours = namespace(count=0) %}
+            {% for hour in forecast %}
+              {% if hour.wh | int > 100 %}
+                {% set sunshine_hours.count = sunshine_hours.count + 1 %}
+              {% endif %}
+            {% endfor %}
+            {{ sunshine_hours.count }}
+          {% else %}
+            0
+          {% endif %}
+        unit_of_measurement: "h"
+        icon: mdi:weather-sunny
+        attributes:
+          # Hourly sunshine indicator (1 = sunny, 0 = cloudy)
+          hourly_sunshine: >
+            {% set forecast = state_attr('sensor.solar_prognose_stundlich', 'hourly_forecast') %}
+            {% if forecast is not none and forecast is iterable and forecast | length > 0 %}
+              {% set sunshine = [] %}
+              {% for hour in forecast %}
+                {% set is_sunny = 1 if hour.wh | int > 100 else 0 %}
+                {% set sunshine = sunshine + [{
+                  'hour': hour.hour,
+                  'time': hour.time,
+                  'sunny': is_sunny,
+                  'production': hour.kw
+                }] %}
+              {% endfor %}
+              {{ sunshine }}
+            {% else %}
+              []
+            {% endif %}
+
+      # Expected PV production for next hours
+      - name: "PV Prognose Nächste Stunden"
+        unique_id: pv_forecast_next_hours
+        state: >
+          {% set forecast = state_attr('sensor.solar_prognose_stundlich', 'hourly_forecast') %}
+          {% if forecast is none %}
+            0
+          {% else %}
+            {% set now_hour = now().hour %}
+            {% set total = namespace(value=0) %}
+            {% for hour in forecast %}
+              {% if hour.hour >= now_hour and hour.hour < now_hour + 6 %}
+                {% set total.value = total.value + hour.wh %}
+              {% endif %}
+            {% endfor %}
+            {{ (total.value / 1000) | round(2) }}
+          {% endif %}
+        unit_of_measurement: "kWh"
+        device_class: energy
+        icon: mdi:solar-power-variant
+
+  - sensor:
+      # Debug sensor to check what data we have
+      - name: "Debug Price Data"
+        unique_id: debug_price_data
+        state: >
+          {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') %}
+          {% if prices is none %}
+            none
+          {% elif prices | length == 0 %}
+            empty
+          {% else %}
+            {{ prices | length }} prices
+          {% endif %}
+        attributes:
+          prices_raw: "{{ state_attr('sensor.tibber_preisprognose', 'prices_today') }}"
+          first_price: >
+            {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') %}
+            {% if prices is not none and prices | length > 0 %}
+              {{ prices[0] }}
+            {% else %}
+              none
+            {% endif %}
+
+  - sensor:
+      # Combined charging plan with PV forecast - uses data from tibber_preisprognose
+      - name: "Ladeplan mit Solarprognose"
+        unique_id: charging_plan_with_solar
+        state: "{{ now().isoformat() }}"
+        attributes:
+          # Combines price, solar, and charging decision
+          plan: >
+            {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') %}
+            {% set solar = state_attr('sensor.sonnenstunden_prognose', 'hourly_sunshine') %}
+            {% if prices and prices is iterable %}
+              {% set solar_available = solar is not none and solar is iterable and solar | length > 0 %}
+              {% set threshold = states('input_number.price_threshold_80') | float(0.28) %}
+              {% set plan = [] %}
+              {% for price in prices %}
+                {% set price_time = price.startsAt | as_datetime | as_local %}
+                {% set price_hour = price_time.hour %}
+
+                {# Find matching solar forecast #}
+                {% set solar_data = namespace(production=0, sunny=0) %}
+                {% if solar_available %}
+                  {% for s in solar %}
+                    {% if s.hour == price_hour %}
+                      {% set solar_data.production = s.production %}
+                      {% set solar_data.sunny = s.sunny %}
+                    {% endif %}
+                  {% endfor %}
+                {% endif %}
+
+                {# Determine charging source #}
+                {% set charging_source = 'none' %}
+                {% if solar_data.production > 1.4 %}
+                  {% set charging_source = 'pv' %}
+                {% elif price.total | float <= threshold %}
+                  {% set charging_source = 'grid' %}
+                {% endif %}
+
+                {% set plan = plan + [{
+                  'hour': price_hour,
+                  'time': price_time.strftime('%H:%M'),
+                  'price': price.total | float,
+                  'solar_kw': solar_data.production,
+                  'sunny': solar_data.sunny,
+                  'charge_source': charging_source
+                }] %}
+              {% endfor %}
+              {{ plan }}
+            {% else %}
+              {{ this.attributes.get('plan', []) }}
+            {% endif %}
