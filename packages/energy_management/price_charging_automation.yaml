@@ -10,6 +10,9 @@ automation:
       # Check at the start of every hour
       - platform: time_pattern
         minutes: "0"
+      # Also check every 5 minutes (to catch mid-hour starts)
+      - platform: time_pattern
+        minutes: "/5"
       # Also check when plan updates
       - platform: state
         entity_id: sensor.optimaler_ladeplan
@@ -36,6 +39,17 @@ automation:
           should_charge: "{{ state_attr('sensor.optimaler_ladeplan', 'should_charge_now') | default(false) }}"
           is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
           current_soc: "{{ states('sensor.tesla_ladestand') | float(0) }}"
+
+      # Log decision info
+      - service: system_log.write
+        data:
+          message: >
+            Price charging automation triggered:
+            should_charge={{ should_charge }},
+            is_charging={{ is_charging }},
+            soc={{ current_soc }}%,
+            hour={{ now().hour }}
+          level: info
 
       - choose:
           # Should charge and not charging -> Start
@@ -73,6 +87,30 @@ automation:
                 data:
                   message: "Price charging started: SoC={{ current_soc }}%"
                   level: info
+              - service: notify.notify
+                data:
+                  title: "🔌 Ladung gestartet"
+                  message: >
+                    {% set plan = state_attr('sensor.optimaler_ladeplan', 'charging_plan') %}
+                    {% set now_hour = now().hour %}
+                    {% set charge_reason = 'Unbekannt' %}
+                    {% set current_price = states('sensor.aktueller_strompreis') | float(0) %}
+                    {% if plan is not none and plan is iterable %}
+                      {% for hour in plan %}
+                        {% if hour.hour == now_hour %}
+                          {% if hour.charge_reason == 'price_80' %}
+                            {% set charge_reason = 'Sehr günstiger Preis (≤' ~ states('input_number.price_threshold_80') ~ '€)' %}
+                          {% elif hour.charge_reason == 'price_50' %}
+                            {% set charge_reason = 'Günstiger Preis (≤' ~ states('input_number.price_threshold_50') ~ '€)' %}
+                          {% elif hour.charge_reason == 'morning_target' %}
+                            {% set charge_reason = 'Morgenziel erreichen (7:00 Uhr)' %}
+                          {% endif %}
+                        {% endif %}
+                      {% endfor %}
+                    {% endif %}
+                    Ladestand: {{ current_soc }}%
+                    Grund: {{ charge_reason }}
+                    Aktueller Preis: {{ current_price | round(3) }} €/kWh
 
           # Should not charge and is charging -> Stop
           - conditions:
@@ -89,6 +127,24 @@ automation:
                 data:
                   message: "Price charging stopped: SoC={{ current_soc }}%"
                   level: info
+              - service: notify.notify
+                data:
+                  title: "⏸️ Ladung gestoppt"
+                  message: >
+                    Ladestand: {{ current_soc }}%
+                    Ziel bis 7:00: {{ states('input_number.target_soc_morning') }}%
+                    Nächste Ladung: {{ state_attr('sensor.optimaler_ladeplan', 'next_charging_hour') | default('Nicht geplant') }}
+
+        # Default: Log when no action taken
+        default:
+          - service: system_log.write
+            data:
+              message: >
+                Price charging: No action needed.
+                should_charge={{ should_charge }},
+                is_charging={{ is_charging }},
+                charging_state={{ states('input_select.charging_state') }}
+              level: debug
 
   # Update plan every hour
   - id: energy_mgmt_update_price_plan

@@ -8,25 +8,39 @@ template:
         unique_id: solar_forecast_hourly
         state: "{{ now().isoformat() }}"
         attributes:
-          # Extract forecast data from Forecast.Solar integration
+          # Extract forecast data from Solcast integration
           hourly_forecast: >
-            {% set forecast_sensor = 'sensor.energy_production_today' %}
-            {% if states(forecast_sensor) != 'unknown' %}
-              {% set forecast = state_attr(forecast_sensor, 'wh_hours') | default({}) %}
-              {% set hourly = [] %}
-              {% for timestamp, watt_hours in forecast.items() %}
-                {% set time = timestamp | as_datetime | as_local %}
-                {% set hourly = hourly + [{
+            {% set solcast_today = state_attr('sensor.solcast_pv_forecast_forecast_today', 'detailedForecast') %}
+            {% set solcast_tomorrow = state_attr('sensor.solcast_pv_forecast_forecast_tomorrow', 'detailedForecast') %}
+            {% set hourly = namespace(list=[]) %}
+
+            {# Process today's forecast #}
+            {% if solcast_today is not none and solcast_today is iterable %}
+              {% for forecast in solcast_today %}
+                {% set time = forecast.period_start %}
+                {% set hourly.list = hourly.list + [{
                   'time': time.isoformat(),
                   'hour': time.hour,
-                  'wh': watt_hours | int,
-                  'kw': (watt_hours / 1000) | round(2)
+                  'wh': (forecast.pv_estimate * 1000) | int,
+                  'kw': forecast.pv_estimate | round(2)
                 }] %}
               {% endfor %}
-              {{ hourly }}
-            {% else %}
-              []
             {% endif %}
+
+            {# Process tomorrow's forecast #}
+            {% if solcast_tomorrow is not none and solcast_tomorrow is iterable %}
+              {% for forecast in solcast_tomorrow %}
+                {% set time = forecast.period_start %}
+                {% set hourly.list = hourly.list + [{
+                  'time': time.isoformat(),
+                  'hour': time.hour,
+                  'wh': (forecast.pv_estimate * 1000) | int,
+                  'kw': forecast.pv_estimate | round(2)
+                }] %}
+              {% endfor %}
+            {% endif %}
+
+            {{ hourly.list }}
 
       # Sunshine hours forecast (calculated from solar data)
       - name: "Sonnenstunden Prognose"
@@ -51,17 +65,17 @@ template:
           hourly_sunshine: >
             {% set forecast = state_attr('sensor.solar_prognose_stundlich', 'hourly_forecast') %}
             {% if forecast is not none and forecast is iterable and forecast | length > 0 %}
-              {% set sunshine = [] %}
+              {% set sunshine = namespace(list=[]) %}
               {% for hour in forecast %}
                 {% set is_sunny = 1 if hour.wh | int > 100 else 0 %}
-                {% set sunshine = sunshine + [{
+                {% set sunshine.list = sunshine.list + [{
                   'hour': hour.hour,
                   'time': hour.time,
                   'sunny': is_sunny,
                   'production': hour.kw
                 }] %}
               {% endfor %}
-              {{ sunshine }}
+              {{ sunshine.list }}
             {% else %}
               []
             {% endif %}
@@ -123,7 +137,7 @@ template:
             {% if prices and prices is iterable %}
               {% set solar_available = solar is not none and solar is iterable and solar | length > 0 %}
               {% set threshold = states('input_number.price_threshold_80') | float(0.28) %}
-              {% set plan = [] %}
+              {% set plan = namespace(list=[]) %}
               {% for price in prices %}
                 {% set price_time = price.startsAt | as_datetime | as_local %}
                 {% set price_hour = price_time.hour %}
@@ -147,7 +161,7 @@ template:
                   {% set charging_source = 'grid' %}
                 {% endif %}
 
-                {% set plan = plan + [{
+                {% set plan.list = plan.list + [{
                   'hour': price_hour,
                   'time': price_time.strftime('%H:%M'),
                   'price': price.total | float,
@@ -156,7 +170,7 @@ template:
                   'charge_source': charging_source
                 }] %}
               {% endfor %}
-              {{ plan }}
+              {{ plan.list }}
             {% else %}
               {{ this.attributes.get('plan', []) }}
             {% endif %}

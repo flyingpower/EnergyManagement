@@ -1,0 +1,54 @@
+# Solcast Integration Check
+# See what sensors and data Solcast provides
+
+template:
+  - sensor:
+      - name: "Debug Solcast Sensors"
+        unique_id: debug_solcast_sensors
+        state: "{{ integration_entities('solcast_solar') | length }} sensors found"
+        attributes:
+          # List all Solcast entities
+          all_entities: "{{ integration_entities('solcast_solar') }}"
+
+          # Check common sensor names
+          forecast_today_exists: "{{ states('sensor.solcast_pv_forecast_forecast_today') not in ['unknown', 'unavailable'] }}"
+          forecast_tomorrow_exists: "{{ states('sensor.solcast_pv_forecast_forecast_tomorrow') not in ['unknown', 'unavailable'] }}"
+
+          # Get state values
+          forecast_today_state: "{{ states('sensor.solcast_pv_forecast_forecast_today') }}"
+          forecast_tomorrow_state: "{{ states('sensor.solcast_pv_forecast_forecast_tomorrow') }}"
+
+          # Check what attributes exist
+          forecast_today_attributes: "{{ states.sensor.solcast_pv_forecast_forecast_today.attributes.keys() | list if states.sensor.solcast_pv_forecast_forecast_today else [] }}"
+
+          # Check for detailed forecast
+          has_detailedForecast: "{{ state_attr('sensor.solcast_pv_forecast_forecast_today', 'detailedForecast') is not none }}"
+          has_detailedHourly: "{{ state_attr('sensor.solcast_pv_forecast_forecast_today', 'detailedHourly') is not none }}"
+
+          # Show structure
+          detailedForecast_type: "{{ state_attr('sensor.solcast_pv_forecast_forecast_today', 'detailedForecast').__class__.__name__ if state_attr('sensor.solcast_pv_forecast_forecast_today', 'detailedForecast') else 'None' }}"
+          detailedForecast_count: >
+            {% set forecast = state_attr('sensor.solcast_pv_forecast_forecast_today', 'detailedForecast') %}
+            {% if forecast is not none and forecast is iterable %}
+              {{ forecast | length }}
+            {% else %}
+              0
+            {% endif %}
+
+          # Sample first entry
+          first_forecast_entry: >
+            {% set forecast = state_attr('sensor.solcast_pv_forecast_forecast_today', 'detailedForecast') %}
+            {% if forecast is not none and forecast is iterable and forecast | length > 0 %}
+              {{ forecast[0] }}
+            {% else %}
+              No data
+            {% endif %}
+
+          # Sample keys from first entry
+          first_entry_keys: >
+            {% set forecast = state_attr('sensor.solcast_pv_forecast_forecast_today', 'detailedForecast') %}
+            {% if forecast is not none and forecast is iterable and forecast | length > 0 %}
+              {{ forecast[0].keys() | list }}
+            {% else %}
+              []
+            {% endif %}

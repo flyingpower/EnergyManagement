@@ -9,16 +9,26 @@ script:
 
   adjust_pv_charging:
     alias: "PV-Ladung anpassen"
-    description: "Passt den Ladestrom basierend auf verfügbarem PV-Überschuss an (Easee)"
+    description: "Passt den Ladestrom basierend auf verfügbarem PV-Überschuss an (Easee) mit Hysterese"
     sequence:
       - variables:
           surplus: "{{ states('sensor.verfugbarer_pv_uberschuss') | float(0) }}"
           min_surplus: "{{ states('input_number.min_pv_surplus') | float(1400) }}"
+          buffer: "{{ states('input_number.pv_charging_buffer') | float(200) }}"
+          stop_threshold: "{{ (min_surplus - buffer) | int }}"
           calculated_current: "{{ states('sensor.berechneter_ladestrom_pv') | int(0) }}"
           is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
 
+      # Log current state for debugging
+      - service: system_log.write
+        data:
+          message: >
+            PV Charging check: surplus={{ surplus }}W, start_threshold={{ min_surplus }}W,
+            stop_threshold={{ stop_threshold }}W, current={{ calculated_current }}A, is_charging={{ is_charging }}
+          level: debug
+
       - choose:
-          # ========== CASE 1: Start Charging ==========
+          # ========== CASE 1: Start Charging (with high threshold) ==========
           - conditions:
               - condition: template
                 value_template: "{{ surplus >= min_surplus }}"
@@ -27,34 +37,52 @@ script:
               - condition: template
                 value_template: "{{ calculated_current >= 6 }}"
             sequence:
+              - service: system_log.write
+                data:
+                  message: "PV Charging: Starting with {{ calculated_current }}A (surplus: {{ surplus }}W)"
+                  level: info
+
               # Force 1-phase mode for PV charging
               - service: easee.set_charger_phase_mode
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
                   phase_mode: "1_phase"
               - delay:
-                  seconds: 1
+                  seconds: 2
               - service: easee.set_charger_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
                   current: "{{ calculated_current }}"
                   time_to_live: 0
               - delay:
-                  seconds: 1
+                  seconds: 2
               - service: easee.action_command
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
                   action_command: "start"
 
-          # ========== CASE 2: Adjust Current (Already Charging) ==========
+              # Send notification
+              - service: notify.notify
+                data:
+                  title: "☀️ PV-Laden gestartet"
+                  message: >
+                    Überschuss: {{ surplus }} W
+                    Ladestrom: {{ calculated_current }} A (1-Phase)
+
+          # ========== CASE 2: Adjust Current (Already Charging, use lower threshold) ==========
           - conditions:
               - condition: template
-                value_template: "{{ surplus >= min_surplus }}"
+                value_template: "{{ surplus >= stop_threshold }}"
               - condition: template
                 value_template: "{{ is_charging }}"
               - condition: template
                 value_template: "{{ calculated_current >= 6 }}"
             sequence:
+              - service: system_log.write
+                data:
+                  message: "PV Charging: Adjusting to {{ calculated_current }}A (surplus: {{ surplus }}W)"
+                  level: debug
+
               # Adjust charging current (1-phase mode already set)
               - service: easee.set_charger_dynamic_limit
                 data:
@@ -62,14 +90,215 @@ script:
                   current: "{{ calculated_current }}"
                   time_to_live: 0
 
-          # ========== CASE 3: Stop Charging (Insufficient Surplus) ==========
+          # ========== CASE 3: Stop Charging (Below stop threshold OR current too low) ==========
           - conditions:
               - condition: template
-                value_template: "{{ surplus < min_surplus }}"
+                value_template: "{{ (surplus < stop_threshold) or (calculated_current < 6) }}"
               - condition: template
                 value_template: "{{ is_charging }}"
             sequence:
+              - service: system_log.write
+                data:
+                  message: "PV Charging: Stopping (surplus: {{ surplus }}W < stop_threshold: {{ stop_threshold }}W)"
+                  level: info
+
               - service: script.stop_charging
+
+              # Send notification
+              - service: notify.notify
+                data:
+                  title: "⏸️ PV-Laden gestoppt"
+                  message: >
+                    Überschuss zu gering: {{ surplus }} W
+                    (Stopp-Schwelle: {{ stop_threshold }} W)
+
+  adjust_pv_charging_smart:
+    alias: "PV-Ladung anpassen (Smart mit Zeitstabilität)"
+    description: "Passt den Ladestrom mit Zeitstabilität und dynamischer Anpassung an"
+    sequence:
+      - variables:
+          surplus: "{{ states('sensor.verfugbarer_pv_uberschuss') | float(0) }}"
+          min_surplus: "{{ states('input_number.min_pv_surplus') | float(1400) }}"
+          buffer: "{{ states('input_number.pv_charging_buffer') | float(200) }}"
+          target_current: "{{ states('sensor.pv_target_charging_current') | int(0) }}"
+          net_consumption: "{{ states('sensor.net_grid_consumption') | float(0) }}"
+          is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
+          current_charging_amps: "{{ states('sensor.garage_dynamic_charger_limit') | int(0) }}"
+          start_timer: "{{ states('input_number.pv_start_condition_timer') | int(0) }}"
+          stop_timer: "{{ states('input_number.pv_stop_condition_timer') | int(0) }}"
+
+      # ========== Update Start Timer ==========
+      - choose:
+          # Start condition met: surplus >= min_pv_surplus
+          - conditions:
+              - condition: template
+                value_template: "{{ surplus >= min_surplus }}"
+              - condition: template
+                value_template: "{{ not is_charging }}"
+            sequence:
+              # Increment start timer (by 30 seconds)
+              - service: input_number.set_value
+                target:
+                  entity_id: input_number.pv_start_condition_timer
+                data:
+                  value: "{{ [start_timer + 30, 600] | min }}"
+              # Reset stop timer
+              - service: input_number.set_value
+                target:
+                  entity_id: input_number.pv_stop_condition_timer
+                data:
+                  value: 0
+        default:
+          # Start condition NOT met - reset start timer
+          - service: input_number.set_value
+            target:
+              entity_id: input_number.pv_start_condition_timer
+            data:
+              value: 0
+
+      # ========== Update Stop Timer ==========
+      - choose:
+          # Stop condition met: at 5A minimum AND consuming from grid
+          - conditions:
+              - condition: template
+                value_template: "{{ is_charging }}"
+              - condition: template
+                value_template: "{{ current_charging_amps <= 6 }}"
+              - condition: template
+                value_template: "{{ net_consumption > buffer }}"
+            sequence:
+              # Increment stop timer (by 30 seconds)
+              - service: input_number.set_value
+                target:
+                  entity_id: input_number.pv_stop_condition_timer
+                data:
+                  value: "{{ [stop_timer + 30, 600] | min }}"
+              # Reset start timer
+              - service: input_number.set_value
+                target:
+                  entity_id: input_number.pv_start_condition_timer
+                data:
+                  value: 0
+        default:
+          # Stop condition NOT met - reset stop timer
+          - service: input_number.set_value
+            target:
+              entity_id: input_number.pv_stop_condition_timer
+            data:
+              value: 0
+
+      # Log current state for debugging
+      - service: system_log.write
+        data:
+          message: >
+            PV Smart: surplus={{ surplus }}W, target_current={{ target_current }}A,
+            net={{ net_consumption }}W, is_charging={{ is_charging }},
+            start_timer={{ start_timer }}s, stop_timer={{ stop_timer }}s
+          level: debug
+
+      # ========== Execute Charging Logic ==========
+      - choose:
+          # CASE 1: Start Charging (timer >= 180 seconds = 3 minutes)
+          - conditions:
+              - condition: template
+                value_template: "{{ start_timer >= 180 }}"
+              - condition: template
+                value_template: "{{ not is_charging }}"
+              - condition: template
+                value_template: "{{ target_current >= 6 }}"
+            sequence:
+              - service: system_log.write
+                data:
+                  message: "PV Smart: Starting with {{ target_current }}A (surplus stable for {{ start_timer }}s)"
+                  level: info
+
+              # Force 1-phase mode for PV charging
+              - service: easee.set_charger_phase_mode
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  phase_mode: "1_phase"
+              - delay:
+                  seconds: 2
+              - service: easee.set_charger_dynamic_limit
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  current: "{{ target_current }}"
+                  time_to_live: 0
+              - delay:
+                  seconds: 2
+              - service: easee.action_command
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  action_command: "start"
+
+              # Reset start timer after starting
+              - service: input_number.set_value
+                target:
+                  entity_id: input_number.pv_start_condition_timer
+                data:
+                  value: 0
+
+              # Send notification
+              - service: notify.notify
+                data:
+                  title: "☀️ PV-Laden gestartet"
+                  message: >
+                    Überschuss: {{ surplus }} W (stabil für 3+ Minuten)
+                    Ladestrom: {{ target_current }} A (1-Phase)
+                    Netz: {{ net_consumption }} W
+
+          # CASE 2: Adjust Current (Already Charging)
+          - conditions:
+              - condition: template
+                value_template: "{{ is_charging }}"
+              - condition: template
+                value_template: "{{ stop_timer < 180 }}"
+              - condition: template
+                value_template: "{{ target_current >= 6 }}"
+              - condition: template
+                value_template: "{{ target_current != current_charging_amps }}"
+            sequence:
+              - service: system_log.write
+                data:
+                  message: "PV Smart: Adjusting from {{ current_charging_amps }}A to {{ target_current }}A (net: {{ net_consumption }}W)"
+                  level: debug
+
+              # Dynamically adjust charging current to maintain ~0W net
+              - service: easee.set_charger_dynamic_limit
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  current: "{{ target_current }}"
+                  time_to_live: 0
+
+          # CASE 3: Stop Charging (timer >= 180 seconds at minimum current)
+          - conditions:
+              - condition: template
+                value_template: "{{ stop_timer >= 180 }}"
+              - condition: template
+                value_template: "{{ is_charging }}"
+            sequence:
+              - service: system_log.write
+                data:
+                  message: "PV Smart: Stopping (at minimum 6A, consuming {{ net_consumption }}W from grid for {{ stop_timer }}s)"
+                  level: info
+
+              - service: script.stop_charging
+
+              # Reset stop timer after stopping
+              - service: input_number.set_value
+                target:
+                  entity_id: input_number.pv_stop_condition_timer
+                data:
+                  value: 0
+
+              # Send notification
+              - service: notify.notify
+                data:
+                  title: "⏸️ PV-Laden gestoppt"
+                  message: >
+                    Überschuss nicht ausreichend (3+ Minuten)
+                    Ladestrom war bei Minimum (6A)
+                    Netz-Verbrauch: {{ net_consumption }} W
 
   # ============================================================================
   # PRICE-BASED CHARGING SCRIPTS

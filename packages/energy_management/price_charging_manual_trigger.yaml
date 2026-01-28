@@ -1,0 +1,24 @@
+# Manual trigger script for price charging
+# Allows user to force-check the price plan and start/stop charging
+
+script:
+  trigger_price_charging:
+    alias: "Preisladen Jetzt Prüfen"
+    description: "Prüft sofort ob geladen werden soll und startet/stoppt entsprechend"
+    icon: mdi:lightning-bolt
+    sequence:
+      - service: automation.trigger
+        target:
+          entity_id: automation.energie_management_preisplan_ausfuhren
+        data:
+          skip_condition: false
+      - service: persistent_notification.create
+        data:
+          title: "Preisladen geprüft"
+          message: >
+            Der Ladeplan wurde geprüft und die Automation ausgeführt.
+
+            Aktueller Status:
+            - Ladezustand: {{ states('input_select.charging_state') }}
+            - Ladestand: {{ states('sensor.tesla_ladestand') }}%
+            - Sollte laden: {{ state_attr('sensor.optimaler_ladeplan', 'should_charge_now') }}

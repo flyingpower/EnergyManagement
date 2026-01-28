@@ -1,0 +1,51 @@
+# Forecast.Solar Integration Check
+# Diagnose what sensors and attributes actually exist
+
+template:
+  - sensor:
+      - name: "Debug Forecast Solar Sensors"
+        unique_id: debug_forecast_solar_sensors
+        state: "{{ integration_entities('forecast_solar') | length }} sensors found"
+        attributes:
+          # List all Forecast.Solar entities
+          all_entities: "{{ integration_entities('forecast_solar') }}"
+
+          # Check common sensor names
+          energy_production_today_exists: "{{ states('sensor.energy_production_today') not in ['unknown', 'unavailable'] }}"
+          energy_production_today_2_exists: "{{ states('sensor.energy_production_today_2') not in ['unknown', 'unavailable'] }}"
+
+          # Check state values
+          energy_production_today_state: "{{ states('sensor.energy_production_today') }}"
+          energy_production_today_2_state: "{{ states('sensor.energy_production_today_2') }}"
+
+          # Get ALL attributes from energy_production_today
+          energy_production_today_attributes: "{{ state_attr('sensor.energy_production_today', '') }}"
+          all_attribute_names: "{{ states.sensor.energy_production_today.attributes.keys() | list if states.sensor.energy_production_today else [] }}"
+
+          # Check specific attributes
+          has_wh_hours: "{{ state_attr('sensor.energy_production_today', 'wh_hours') is not none }}"
+          has_watts: "{{ state_attr('sensor.energy_production_today', 'watts') is not none }}"
+          has_wh_period: "{{ state_attr('sensor.energy_production_today', 'wh_period') is not none }}"
+          has_detailedForecast: "{{ state_attr('sensor.energy_production_today', 'detailedForecast') is not none }}"
+
+          # Show what we actually have
+          wh_hours: "{{ state_attr('sensor.energy_production_today', 'wh_hours') }}"
+          watts: "{{ state_attr('sensor.energy_production_today', 'watts') }}"
+          wh_period: "{{ state_attr('sensor.energy_production_today', 'wh_period') }}"
+          detailedForecast: "{{ state_attr('sensor.energy_production_today', 'detailedForecast') }}"
+
+          # Try to list first few keys if it's a dict
+          wh_hours_type: "{{ state_attr('sensor.energy_production_today', 'wh_hours').__class__.__name__ if state_attr('sensor.energy_production_today', 'wh_hours') else 'None' }}"
+
+          # Sample data
+          sample_wh_hours: >
+            {% set wh = state_attr('sensor.energy_production_today', 'wh_hours') %}
+            {% if wh is not none %}
+              {% if wh is mapping %}
+                First 3 entries: {{ wh.items() | list | first }}
+              {% else %}
+                {{ wh }}
+              {% endif %}
+            {% else %}
+              No data
+            {% endif %}

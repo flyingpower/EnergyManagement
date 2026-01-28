@@ -1,0 +1,60 @@
+# PV Charging Helper Inputs
+# Time-based stability tracking for start/stop conditions
+
+input_number:
+  # Track how long start condition has been met (in seconds)
+  pv_start_condition_timer:
+    name: "PV Start Condition Timer"
+    min: 0
+    max: 600
+    step: 1
+    unit_of_measurement: "s"
+    icon: mdi:timer-sand
+
+  # Track how long stop condition has been met (in seconds)
+  pv_stop_condition_timer:
+    name: "PV Stop Condition Timer"
+    min: 0
+    max: 600
+    step: 1
+    unit_of_measurement: "s"
+    icon: mdi:timer-sand
+
+template:
+  - sensor:
+      # Calculate target charging current to achieve ~0W net consumption
+      - name: "PV Target Charging Current"
+        unique_id: pv_target_charging_current
+        unit_of_measurement: "A"
+        state: >
+          {% set consumption = states('sensor.tibber_power') | float(0) %}
+          {% set production = states('sensor.tibber_power_production') | float(0) %}
+          {% set buffer = states('input_number.pv_charging_buffer') | float(200) %}
+          {% set current_charging = states('sensor.garage_power') | float(0) * 1000 %}
+
+          {# Net = consumption - production (positive = importing, negative = exporting) #}
+          {% set net = consumption - production %}
+
+          {# Available for charging = production - consumption + current charging #}
+          {% set available = production - consumption + current_charging %}
+
+          {# Target: use all available power for charging (aiming for 0W net) #}
+          {# But leave 'buffer' headroom to avoid grid import #}
+          {% set target_power = available - buffer %}
+
+          {# Convert to current: P = U * I, so I = P / U (1-phase, 230V) #}
+          {% set voltage = 230 %}
+          {% set target_current = (target_power / voltage) | round(0) | int %}
+
+          {# Clamp between 6A (minimum) and 32A (maximum) #}
+          {{ [[target_current, 6] | max, 32] | min }}
+
+      # Net grid consumption (positive = importing, negative = exporting)
+      - name: "Net Grid Consumption"
+        unique_id: net_grid_consumption
+        unit_of_measurement: "W"
+        device_class: power
+        state: >
+          {% set consumption = states('sensor.tibber_power') | float(0) %}
+          {% set production = states('sensor.tibber_power_production') | float(0) %}
+          {{ (consumption - production) | round(0) }}

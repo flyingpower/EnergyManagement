@@ -1,0 +1,66 @@
+# Solar Forecast Debug Sensor
+# Check if Forecast.Solar integration is working
+
+template:
+  - sensor:
+      - name: "Debug Solar Prognose"
+        unique_id: debug_solar_forecast
+        state: >
+          {% if states('sensor.energy_production_today') == 'unknown' %}
+            Sensor nicht gefunden
+          {% elif states('sensor.energy_production_today') == 'unavailable' %}
+            Sensor nicht verfügbar
+          {% else %}
+            {{ states('sensor.energy_production_today') }}
+          {% endif %}
+        attributes:
+          sensor_exists: "{{ states('sensor.energy_production_today') not in ['unknown', 'unavailable'] }}"
+          sensor_state: "{{ states('sensor.energy_production_today') }}"
+
+          has_wh_hours: "{{ state_attr('sensor.energy_production_today', 'wh_hours') is not none }}"
+
+          wh_hours_raw: "{{ state_attr('sensor.energy_production_today', 'wh_hours') }}"
+
+          wh_hours_count: >
+            {% set wh = state_attr('sensor.energy_production_today', 'wh_hours') %}
+            {% if wh is not none %}
+              {{ wh | length }}
+            {% else %}
+              0
+            {% endif %}
+
+          first_entry: >
+            {% set wh = state_attr('sensor.energy_production_today', 'wh_hours') %}
+            {% if wh is not none and wh | length > 0 %}
+              {% for timestamp, watt_hours in wh.items() %}
+                {{ timestamp }}: {{ watt_hours }} Wh
+                {% break %}
+              {% endfor %}
+            {% else %}
+              Keine Daten
+            {% endif %}
+
+          parsed_hourly_forecast: >
+            {% set forecast_sensor = 'sensor.energy_production_today' %}
+            {% if states(forecast_sensor) != 'unknown' %}
+              {% set forecast = state_attr(forecast_sensor, 'wh_hours') | default({}) %}
+              {% set hourly = namespace(list=[]) %}
+              {% for timestamp, watt_hours in forecast.items() %}
+                {% set time = timestamp | as_datetime | as_local %}
+                {% set hourly.list = hourly.list + [{
+                  'time': time.isoformat(),
+                  'hour': time.hour,
+                  'wh': watt_hours | int,
+                  'kw': (watt_hours / 1000) | round(2)
+                }] %}
+              {% endfor %}
+              {{ hourly.list }}
+            {% else %}
+              []
+            {% endif %}
+
+          integration_installed: >
+            {% set domains = integration_entities('forecast_solar') %}
+            {{ domains | length > 0 }}
+
+          forecast_solar_entities: "{{ integration_entities('forecast_solar') }}"

@@ -1,0 +1,53 @@
+# Charging Debug Sensors
+# Help diagnose why automated charging isn't starting
+
+template:
+  - sensor:
+      # Debug: Check all conditions for price charging
+      - name: "Debug Preisladen Bedingungen"
+        unique_id: debug_price_charging_conditions
+        state: >
+          {% if is_state('input_boolean.enable_price_charging', 'on')
+             and is_state('binary_sensor.auto_angeschlossen', 'on')
+             and is_state('input_boolean.manual_charging_mode', 'off')
+             and is_state('binary_sensor.notladung_erforderlich', 'off') %}
+            Alle OK
+          {% else %}
+            Bedingung fehlt
+          {% endif %}
+        attributes:
+          enable_price_charging: "{{ states('input_boolean.enable_price_charging') }}"
+          auto_angeschlossen: "{{ states('binary_sensor.auto_angeschlossen') }}"
+          manual_mode: "{{ states('input_boolean.manual_charging_mode') }}"
+          emergency_mode: "{{ states('binary_sensor.notladung_erforderlich') }}"
+
+          should_charge_now: "{{ state_attr('sensor.optimaler_ladeplan', 'should_charge_now') }}"
+          should_charge_now_type: "{{ state_attr('sensor.optimaler_ladeplan', 'should_charge_now') | string }}"
+
+          current_hour: "{{ now().hour }}"
+          plan_hours: >
+            {% set plan = state_attr('sensor.optimaler_ladeplan', 'charging_plan') %}
+            {% if plan and plan is iterable %}
+              {{ plan | map(attribute='hour') | list }}
+            {% else %}
+              []
+            {% endif %}
+
+          charging_hours: >
+            {% set plan = state_attr('sensor.optimaler_ladeplan', 'charging_plan') %}
+            {% if plan and plan is iterable %}
+              {% set ns = namespace(hours=[]) %}
+              {% for hour in plan %}
+                {% if hour.should_charge %}
+                  {% set ns.hours = ns.hours + [hour.hour] %}
+                {% endif %}
+              {% endfor %}
+              {{ ns.hours }}
+            {% else %}
+              []
+            {% endif %}
+
+          garage_status: "{{ states('sensor.garage_status') }}"
+          is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
+
+          last_automation_run: "{{ state_attr('automation.energie_management_preisplan_ausfuhren', 'last_triggered') }}"

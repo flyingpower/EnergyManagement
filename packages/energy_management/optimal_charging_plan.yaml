@@ -63,22 +63,27 @@ template:
                 {% set should_charge = false %}
                 {% set charge_reason = 'none' %}
 
-                {# Check opportunistic charging thresholds #}
-                {% if price_val <= threshold_80 and soc.value < 80 %}
-                  {% set should_charge = true %}
-                  {% set charge_reason = 'price_80' %}
-                {% elif price_val <= threshold_50 and soc.value < 50 %}
-                  {% set should_charge = true %}
-                  {% set charge_reason = 'price_50' %}
-                {# Check if this hour is in optimal plan for morning target #}
-                {% elif price_hour in selected_hour_nums and price_time > now_time and price_time <= target_time %}
-                  {% set should_charge = true %}
-                  {% set charge_reason = 'morning_target' %}
+                {# Only evaluate future hours (or current hour) #}
+                {% if price_time >= now_time.replace(minute=0, second=0, microsecond=0) %}
+                  {# Check opportunistic charging thresholds - use projected soc.value #}
+                  {# Round soc.value to avoid floating point issues (79.7 rounds to 80) #}
+                  {% if price_val <= threshold_80 and soc.value | round(0) < 80 %}
+                    {% set should_charge = true %}
+                    {% set charge_reason = 'price_80' %}
+                  {% elif price_val <= threshold_50 and soc.value | round(0) < 50 %}
+                    {% set should_charge = true %}
+                    {% set charge_reason = 'price_50' %}
+                  {# Check if this hour is in optimal plan for morning target #}
+                  {# Also check if still below target (opportunistic charging might have already reached it) #}
+                  {% elif price_hour in selected_hour_nums and price_time > now_time and price_time <= target_time and soc.value | round(0) < target_soc %}
+                    {% set should_charge = true %}
+                    {% set charge_reason = 'morning_target' %}
+                  {% endif %}
                 {% endif %}
 
                 {# Update SoC if charging #}
                 {% if should_charge %}
-                  {% set soc.value = [soc.value + soc_per_hour, 80] | min %}
+                  {% set soc.value = [soc.value + soc_per_hour, 100] | min %}
                 {% endif %}
 
                 {% set plan.list = plan.list + [{
@@ -125,14 +130,16 @@ template:
           # Should charge now
           should_charge_now: >
             {% set plan = state_attr('sensor.optimaler_ladeplan', 'charging_plan') %}
-            {% set now_hour = now().hour %}
+            {% set now_time = now() %}
+            {% set current_hour_start = now_time.replace(minute=0, second=0, microsecond=0) %}
+            {% set result = namespace(value=false) %}
             {% if plan and plan is iterable %}
               {% for hour in plan %}
-                {% if hour.hour == now_hour %}
-                  {{ hour.should_charge }}
+                {% set hour_time = hour.datetime | as_datetime %}
+                {% if hour_time == current_hour_start %}
+                  {% set result.value = hour.should_charge %}
                   {% break %}
                 {% endif %}
               {% endfor %}
-            {% else %}
-              false
             {% endif %}
+            {{ result.value }}
