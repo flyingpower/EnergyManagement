@@ -198,10 +198,10 @@ script:
 
       # ========== Execute Charging Logic ==========
       - choose:
-          # CASE 1: Start Charging (timer >= 300 seconds = 5 minutes)
+          # CASE 1: Start Charging (timer >= 120 seconds = 2 minutes)
           - conditions:
               - condition: template
-                value_template: "{{ start_timer >= 300 }}"
+                value_template: "{{ start_timer >= 120 }}"
               - condition: template
                 value_template: "{{ not is_charging }}"
               - condition: template
@@ -209,7 +209,7 @@ script:
             sequence:
               - service: system_log.write
                 data:
-                  message: "PV Smart: Starting with {{ target_current }}A (surplus stable for {{ start_timer }}s / 300s required)"
+                  message: "PV Smart: Starting with {{ target_current }}A (surplus stable for {{ start_timer }}s / 120s required)"
                   level: info
 
               # Force 1-phase mode for PV charging
@@ -243,7 +243,7 @@ script:
                 data:
                   title: "☀️ PV-Laden gestartet"
                   message: >
-                    Überschuss: {{ surplus }} W (stabil für 5+ Minuten)
+                    Überschuss: {{ surplus }} W (stabil für 2+ Minuten)
                     Ladestrom: {{ target_current }} A (1-Phase)
                     Netz: {{ net_consumption }} W
 
