@@ -136,12 +136,12 @@ script:
               - condition: template
                 value_template: "{{ not is_charging }}"
             sequence:
-              # Increment start timer (by 30 seconds)
+              # Increment start timer (by 120 seconds = 2 minutes, matches automation interval)
               - service: input_number.set_value
                 target:
                   entity_id: input_number.pv_start_condition_timer
                 data:
-                  value: "{{ [start_timer + 30, 600] | min }}"
+                  value: "{{ [start_timer + 120, 600] | min }}"
               # Reset stop timer
               - service: input_number.set_value
                 target:
@@ -167,12 +167,12 @@ script:
               - condition: template
                 value_template: "{{ net_consumption > buffer }}"
             sequence:
-              # Increment stop timer (by 30 seconds)
+              # Increment stop timer (by 120 seconds = 2 minutes, matches automation interval)
               - service: input_number.set_value
                 target:
                   entity_id: input_number.pv_stop_condition_timer
                 data:
-                  value: "{{ [stop_timer + 30, 600] | min }}"
+                  value: "{{ [stop_timer + 120, 600] | min }}"
               # Reset start timer
               - service: input_number.set_value
                 target:
@@ -198,10 +198,10 @@ script:
 
       # ========== Execute Charging Logic ==========
       - choose:
-          # CASE 1: Start Charging (timer >= 180 seconds = 3 minutes)
+          # CASE 1: Start Charging (timer >= 300 seconds = 5 minutes)
           - conditions:
               - condition: template
-                value_template: "{{ start_timer >= 180 }}"
+                value_template: "{{ start_timer >= 300 }}"
               - condition: template
                 value_template: "{{ not is_charging }}"
               - condition: template
@@ -209,7 +209,7 @@ script:
             sequence:
               - service: system_log.write
                 data:
-                  message: "PV Smart: Starting with {{ target_current }}A (surplus stable for {{ start_timer }}s)"
+                  message: "PV Smart: Starting with {{ target_current }}A (surplus stable for {{ start_timer }}s / 300s required)"
                   level: info
 
               # Force 1-phase mode for PV charging
@@ -243,7 +243,7 @@ script:
                 data:
                   title: "☀️ PV-Laden gestartet"
                   message: >
-                    Überschuss: {{ surplus }} W (stabil für 3+ Minuten)
+                    Überschuss: {{ surplus }} W (stabil für 5+ Minuten)
                     Ladestrom: {{ target_current }} A (1-Phase)
                     Netz: {{ net_consumption }} W
 
@@ -252,7 +252,7 @@ script:
               - condition: template
                 value_template: "{{ is_charging }}"
               - condition: template
-                value_template: "{{ stop_timer < 180 }}"
+                value_template: "{{ stop_timer < 300 }}"
               - condition: template
                 value_template: "{{ target_current >= 6 }}"
               - condition: template
@@ -270,10 +270,10 @@ script:
                   current: "{{ target_current }}"
                   time_to_live: 0
 
-          # CASE 3: Stop Charging (timer >= 180 seconds at minimum current)
+          # CASE 3: Stop Charging (timer >= 300 seconds = 5 minutes at minimum current)
           - conditions:
               - condition: template
-                value_template: "{{ stop_timer >= 180 }}"
+                value_template: "{{ stop_timer >= 300 }}"
               - condition: template
                 value_template: "{{ is_charging }}"
             sequence:
@@ -296,7 +296,7 @@ script:
                 data:
                   title: "⏸️ PV-Laden gestoppt"
                   message: >
-                    Überschuss nicht ausreichend (3+ Minuten)
+                    Überschuss nicht ausreichend (5+ Minuten)
                     Ladestrom war bei Minimum (6A)
                     Netz-Verbrauch: {{ net_consumption }} W
 

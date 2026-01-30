@@ -107,7 +107,7 @@ automation:
 
   - id: energy_mgmt_pv_charging_adjust
     alias: "Energie Management - PV Ladestrom anpassen"
-    description: "Passt den Ladestrom alle 2 Minuten an den PV-Überschuss an"
+    description: "Passt den Ladestrom alle 2 Minuten an den PV-Überschuss an mit Zeitstabilität"
     trigger:
       - platform: time_pattern
         minutes: "/2"  # Check every 2 minutes (not on every state change!)
@@ -120,7 +120,7 @@ automation:
         state: "on"
     mode: single  # Don't restart - wait for completion
     action:
-      - service: script.adjust_pv_charging
+      - service: script.adjust_pv_charging_smart
 
   # ============================================================================
   # PRICE-BASED CHARGING
