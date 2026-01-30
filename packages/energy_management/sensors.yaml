@@ -118,9 +118,9 @@ template:
       - name: "Auto Angeschlossen"
         unique_id: energy_mgmt_car_connected_sensor
         state: >
-          {{ is_state('binary_sensor.garage_cable_lock', 'off') }}
+          {{ not is_state('sensor.garage_status', 'disconnected') }}
         icon: >
-          {% if is_state('binary_sensor.garage_cable_lock', 'off') %}
+          {% if not is_state('sensor.garage_status', 'disconnected') %}
             mdi:car-electric
           {% else %}
             mdi:car-off
@@ -221,14 +221,14 @@ template:
 
   - binary_sensor:
       # Car Connected Binary Sensor
-      # Using cable lock: when 'off', car is connected (cable unlocked and in use)
+      # Using Easee charger status - car is connected when NOT disconnected
       - name: "Auto Angeschlossen"
         unique_id: energy_mgmt_car_connected_binary
         state: >
-          {{ is_state('binary_sensor.garage_cable_lock', 'off') }}
+          {{ not is_state('sensor.garage_status', 'disconnected') }}
         device_class: plug
         icon: >
-          {% if is_state('binary_sensor.garage_cable_lock', 'off') %}
+          {% if not is_state('sensor.garage_status', 'disconnected') %}
             mdi:power-plug
           {% else %}
             mdi:power-plug-off

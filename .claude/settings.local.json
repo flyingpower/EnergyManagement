@@ -187,7 +187,8 @@
       "Bash(find:*)",
       "Bash(grep:*)",
       "Bash(ha-cli state get:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

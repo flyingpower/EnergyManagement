@@ -42,15 +42,17 @@ template:
 
             {{ hourly.list }}
 
-      # Sunshine hours forecast (calculated from solar data)
+      # Sunshine hours forecast (calculated from solar data - TODAY only)
       - name: "Sonnenstunden Prognose"
         unique_id: sunshine_hours_forecast
         state: >
           {% set forecast = state_attr('sensor.solar_prognose_stundlich', 'hourly_forecast') %}
           {% if forecast is not none and forecast is iterable and forecast | length > 0 %}
             {% set sunshine_hours = namespace(count=0) %}
+            {% set today = now().date() %}
             {% for hour in forecast %}
-              {% if hour.wh | int > 100 %}
+              {% set hour_time = hour.time | as_datetime %}
+              {% if hour_time.date() == today and hour.wh | int > 100 %}
                 {% set sunshine_hours.count = sunshine_hours.count + 1 %}
               {% endif %}
             {% endfor %}
@@ -80,18 +82,20 @@ template:
               []
             {% endif %}
 
-      # Expected PV production for next hours
+      # Expected PV production for next 6 hours
       - name: "PV Prognose Nächste Stunden"
         unique_id: pv_forecast_next_hours
         state: >
           {% set forecast = state_attr('sensor.solar_prognose_stundlich', 'hourly_forecast') %}
-          {% if forecast is none %}
+          {% if forecast is none or forecast | length == 0 %}
             0
           {% else %}
-            {% set now_hour = now().hour %}
+            {% set now_time = now() %}
+            {% set end_time = now_time + timedelta(hours=6) %}
             {% set total = namespace(value=0) %}
             {% for hour in forecast %}
-              {% if hour.hour >= now_hour and hour.hour < now_hour + 6 %}
+              {% set hour_time = hour.time | as_datetime %}
+              {% if hour_time >= now_time and hour_time < end_time %}
                 {% set total.value = total.value + hour.wh %}
               {% endif %}
             {% endfor %}
