@@ -103,7 +103,7 @@ automation:
                           {% elif hour.charge_reason == 'price_50' %}
                             {% set charge_reason = 'Günstiger Preis (≤' ~ states('input_number.price_threshold_50') ~ '€)' %}
                           {% elif hour.charge_reason == 'morning_target' %}
-                            {% set charge_reason = 'Morgenziel erreichen (7:00 Uhr)' %}
+                            {% set charge_reason = 'Morgenziel erreichen (' ~ states('input_number.morning_target_hour') | int ~ ':00 Uhr)' %}
                           {% endif %}
                         {% endif %}
                       {% endfor %}
@@ -132,7 +132,7 @@ automation:
                   title: "⏸️ Ladung gestoppt"
                   message: >
                     Ladestand: {{ current_soc }}%
-                    Ziel bis 7:00: {{ states('input_number.target_soc_morning') }}%
+                    Ziel bis {{ states('input_number.morning_target_hour') | int }}:00: {{ states('input_number.target_soc_morning') }}%
                     Nächste Ladung: {{ state_attr('sensor.optimaler_ladeplan', 'next_charging_hour') | default('Nicht geplant') }}
 
         # Default: Log when no action taken

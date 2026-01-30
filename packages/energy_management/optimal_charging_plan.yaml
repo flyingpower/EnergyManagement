@@ -20,8 +20,9 @@ template:
 
             {% set prices = state_attr('sensor.tibber_preisprognose', 'prices_today') %}
             {% set now_time = now() %}
-            {% set target_time = now_time.replace(hour=7, minute=0, second=0) %}
-            {% if now_time.hour >= 7 %}
+            {% set target_hour = states('input_number.morning_target_hour') | int(7) %}
+            {% set target_time = now_time.replace(hour=target_hour, minute=0, second=0) %}
+            {% if now_time.hour >= target_hour %}
               {% set target_time = target_time + timedelta(days=1) %}
             {% endif %}
 
@@ -30,7 +31,7 @@ template:
               {% set available_hours = namespace(list=[]) %}
               {% for price in prices %}
                 {% set price_time = price.startsAt | as_datetime | as_local %}
-                {% if price_time > now_time and price_time <= target_time %}
+                {% if price_time >= now_time.replace(minute=0, second=0, microsecond=0) and price_time < target_time %}
                   {% set available_hours.list = available_hours.list + [{
                     'time': price_time,
                     'hour': price_time.hour,
@@ -75,7 +76,7 @@ template:
                     {% set charge_reason = 'price_50' %}
                   {# Check if this hour is in optimal plan for morning target #}
                   {# Also check if still below target (opportunistic charging might have already reached it) #}
-                  {% elif price_hour in selected_hour_nums and price_time > now_time and price_time <= target_time and soc.value | round(0) < target_soc %}
+                  {% elif price_hour in selected_hour_nums and price_time >= now_time.replace(minute=0, second=0, microsecond=0) and price_time < target_time and soc.value | round(0) < target_soc %}
                     {% set should_charge = true %}
                     {% set charge_reason = 'morning_target' %}
                   {% endif %}

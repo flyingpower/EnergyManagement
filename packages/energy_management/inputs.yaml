@@ -4,13 +4,23 @@
 input_number:
   # Morning Readiness Target
   target_soc_morning:
-    name: "Ziel-Ladestand Morgen (7:00 Uhr)"
+    name: "Ziel-Ladestand Morgen"
     min: 20
     max: 100
     step: 5
     unit_of_measurement: "%"
     icon: mdi:battery-charging-80
     initial: 80
+
+  # Morning Target Hour
+  morning_target_hour:
+    name: "Morgenziel Uhrzeit"
+    min: 0
+    max: 23
+    step: 1
+    unit_of_measurement: "Uhr"
+    icon: mdi:clock-outline
+    initial: 7
 
   # Manual Charging Target
   manual_target_soc:

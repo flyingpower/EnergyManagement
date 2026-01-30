@@ -1,0 +1,475 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "lovelace.energie_management",
+  "data": {
+    "config": {
+      "views": [
+        {
+          "title": "Energie Management",
+          "path": "energie-management",
+          "icon": "mdi:car-electric",
+          "badges": [],
+          "cards": [
+            {
+              "type": "vertical-stack",
+              "title": "Status Übersicht",
+              "cards": [
+                {
+                  "type": "entities",
+                  "entities": [
+                    {
+                      "entity": "sensor.aktueller_lademodus",
+                      "name": "Aktueller Modus",
+                      "icon": "mdi:state-machine"
+                    },
+                    {
+                      "entity": "input_select.charging_state",
+                      "name": "Systemstatus"
+                    },
+                    {
+                      "entity": "binary_sensor.auto_angeschlossen",
+                      "name": "Auto verbunden"
+                    }
+                  ]
+                },
+                {
+                  "type": "horizontal-stack",
+                  "cards": [
+                    {
+                      "type": "gauge",
+                      "entity": "sensor.tesla_ladestand",
+                      "name": "Ladestand",
+                      "min": 0,
+                      "max": 100,
+                      "severity": {
+                        "green": 60,
+                        "yellow": 40,
+                        "red": 20
+                      }
+                    },
+                    {
+                      "type": "gauge",
+                      "entity": "sensor.aktueller_strompreis",
+                      "name": "Strompreis",
+                      "min": 0,
+                      "max": 0.5,
+                      "severity": {
+                        "green": 0,
+                        "yellow": 0.3,
+                        "red": 0.4
+                      },
+                      "unit": "EUR/kWh"
+                    },
+                    {
+                      "type": "gauge",
+                      "entity": "sensor.verfugbarer_pv_uberschuss",
+                      "name": "PV-Überschuss",
+                      "min": 0,
+                      "max": 3000,
+                      "severity": {
+                        "green": 1400,
+                        "yellow": 1000,
+                        "red": 0
+                      },
+                      "unit": "W"
+                    }
+                  ]
+                },
+                {
+                  "type": "entities",
+                  "entities": [
+                    {
+                      "entity": "sensor.tesla_ladestatus",
+                      "name": "Tesla Status"
+                    },
+                    {
+                      "entity": "sensor.easee_ladegerat_status",
+                      "name": "Ladegerät Status"
+                    },
+                    {
+                      "entity": "sensor.aktuelle_ladeleistung",
+                      "name": "Aktuelle Leistung"
+                    },
+                    {
+                      "entity": "sensor.berechneter_ladestrom_pv",
+                      "name": "Berechneter Strom (PV)"
+                    },
+                    {
+                      "entity": "sensor.preisniveau",
+                      "name": "Aktuelles Preisniveau"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "vertical-stack",
+              "title": "Manueller Lademodus",
+              "cards": [
+                {
+                  "type": "entities",
+                  "entities": [
+                    {
+                      "entity": "input_boolean.manual_charging_mode",
+                      "name": "Manuellen Modus aktivieren"
+                    }
+                  ]
+                },
+                {
+                  "type": "conditional",
+                  "conditions": [
+                    {
+                      "entity": "input_boolean.manual_charging_mode",
+                      "state": "on"
+                    }
+                  ],
+                  "card": {
+                    "type": "entities",
+                    "entities": [
+                      {
+                        "entity": "input_number.manual_target_soc",
+                        "name": "Ziel-Ladestand"
+                      },
+                      {
+                        "entity": "input_datetime.manual_deadline",
+                        "name": "Deadline"
+                      },
+                      {
+                        "entity": "sensor.benotigte_energie_bis_ziel",
+                        "name": "Benötigte Energie"
+                      },
+                      {
+                        "entity": "sensor.geschatzte_ladedauer",
+                        "name": "Geschätzte Dauer"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "type": "vertical-stack",
+              "title": "Einstellungen",
+              "cards": [
+                {
+                  "type": "entities",
+                  "title": "Aktivierte Funktionen",
+                  "entities": [
+                    {
+                      "entity": "input_boolean.enable_pv_charging",
+                      "name": "PV-Laden"
+                    },
+                    {
+                      "entity": "input_boolean.enable_price_charging",
+                      "name": "Preisbasiertes Laden"
+                    },
+                    {
+                      "entity": "input_boolean.enable_morning_readiness",
+                      "name": "Morgen-Bereitschaft"
+                    }
+                  ]
+                },
+                {
+                  "type": "entities",
+                  "title": "Morgen-Bereitschaft",
+                  "entities": [
+                    {
+                      "entity": "input_number.target_soc_morning",
+                      "name": "Ziel-Ladestand"
+                    },
+                    {
+                      "entity": "input_number.morning_target_hour",
+                      "name": "Zielzeit"
+                    },
+                    {
+                      "entity": "sensor.benotigte_energie_bis_ziel",
+                      "name": "Benötigte Energie"
+                    },
+                    {
+                      "entity": "binary_sensor.morgenziel_erreichbar",
+                      "name": "Ziel erreichbar"
+                    }
+                  ]
+                },
+                {
+                  "type": "entities",
+                  "title": "Preisschwellen",
+                  "entities": [
+                    {
+                      "entity": "input_number.price_threshold_80",
+                      "name": "Schwelle für 80% Ladung"
+                    },
+                    {
+                      "entity": "input_number.price_threshold_50",
+                      "name": "Schwelle für 50% Ladung"
+                    },
+                    {
+                      "entity": "sensor.aktueller_strompreis",
+                      "name": "Aktueller Preis"
+                    }
+                  ]
+                },
+                {
+                  "type": "entities",
+                  "title": "PV-Laden Einstellungen",
+                  "entities": [
+                    {
+                      "entity": "input_number.min_pv_surplus",
+                      "name": "Minimaler Überschuss"
+                    },
+                    {
+                      "entity": "input_number.pv_charging_buffer",
+                      "name": "Sicherheitspuffer"
+                    },
+                    {
+                      "entity": "input_number.pv_hysteresis_time",
+                      "name": "Hysterese-Zeit"
+                    },
+                    {
+                      "entity": "sensor.verfugbarer_pv_uberschuss",
+                      "name": "Aktueller Überschuss"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "vertical-stack",
+              "title": "Detaillierter Status",
+              "cards": [
+                {
+                  "type": "entities",
+                  "title": "Tesla",
+                  "entities": [
+                    {
+                      "entity": "sensor.tesla_ladestand",
+                      "name": "Ladestand"
+                    },
+                    {
+                      "entity": "sensor.tesla_ladestatus",
+                      "name": "Status"
+                    },
+                    {
+                      "entity": "sensor.model_3_battery_level",
+                      "name": "Batterie (Original)"
+                    },
+                    {
+                      "entity": "sensor.model_3_charging",
+                      "name": "Ladezustand (Original)"
+                    }
+                  ]
+                },
+                {
+                  "type": "entities",
+                  "title": "Easee Ladegerät",
+                  "entities": [
+                    {
+                      "entity": "sensor.easee_ladegerat_status",
+                      "name": "Status"
+                    },
+                    {
+                      "entity": "sensor.aktuelle_ladeleistung",
+                      "name": "Leistung"
+                    },
+                    {
+                      "entity": "sensor.garage_power",
+                      "name": "Leistung (Original kW)"
+                    },
+                    {
+                      "entity": "sensor.garage_status",
+                      "name": "Status (Original)"
+                    },
+                    {
+                      "entity": "sensor.garage_session_energy",
+                      "name": "Geladene Energie (kWh)"
+                    }
+                  ]
+                },
+                {
+                  "type": "entities",
+                  "title": "Tibber Energie",
+                  "entities": [
+                    {
+                      "entity": "sensor.aktueller_strompreis",
+                      "name": "Aktueller Preis"
+                    },
+                    {
+                      "entity": "sensor.preisniveau",
+                      "name": "Preisniveau"
+                    },
+                    {
+                      "entity": "sensor.verfugbarer_pv_uberschuss",
+                      "name": "PV-Überschuss"
+                    },
+                    {
+                      "entity": "sensor.tibber_power",
+                      "name": "Verbrauch (W)"
+                    },
+                    {
+                      "entity": "sensor.tibber_power_production",
+                      "name": "Produktion (W)"
+                    },
+                    {
+                      "entity": "sensor.tibber_electricity_price",
+                      "name": "Preis (Original)"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "vertical-stack",
+              "title": "Verlauf",
+              "cards": [
+                {
+                  "type": "history-graph",
+                  "title": "Ladestand Verlauf (24h)",
+                  "hours_to_show": 24,
+                  "entities": [
+                    {
+                      "entity": "sensor.tesla_ladestand"
+                    }
+                  ]
+                },
+                {
+                  "type": "history-graph",
+                  "title": "Ladeleistung Verlauf (24h)",
+                  "hours_to_show": 24,
+                  "entities": [
+                    {
+                      "entity": "sensor.aktuelle_ladeleistung"
+                    }
+                  ]
+                },
+                {
+                  "type": "history-graph",
+                  "title": "Strompreis Verlauf (24h)",
+                  "hours_to_show": 24,
+                  "entities": [
+                    {
+                      "entity": "sensor.aktueller_strompreis"
+                    }
+                  ]
+                },
+                {
+                  "type": "history-graph",
+                  "title": "PV-Überschuss Verlauf (24h)",
+                  "hours_to_show": 24,
+                  "entities": [
+                    {
+                      "entity": "sensor.verfugbarer_pv_uberschuss"
+                    }
+                  ]
+                },
+                {
+                  "type": "history-graph",
+                  "title": "Lademodus Verlauf (24h)",
+                  "hours_to_show": 24,
+                  "entities": [
+                    {
+                      "entity": "input_select.charging_state"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "binary_sensor.notladung_erforderlich",
+                  "state": "on"
+                }
+              ],
+              "card": {
+                "type": "markdown",
+                "content": "## ⚠️ Notladung erforderlich!\n\nDer Ladestand ist kritisch niedrig ({{ states('sensor.tesla_ladestand') }}%).\nDas System hat automatisch die Notladung aktiviert.\n"
+              }
+            },
+            {
+              "type": "conditional",
+              "conditions": [
+                {
+                  "entity": "binary_sensor.morgenziel_erreichbar",
+                  "state": "off"
+                }
+              ],
+              "card": {
+                "type": "markdown",
+                "content": "## ⚠️ Morgenziel gefährdet\n\nDas Fahrzeug wird morgen um {{ states('input_number.morning_target_hour') | int }}:00 Uhr wahrscheinlich nicht\n{{ states('input_number.target_soc_morning') }}% erreichen.\n\nAktueller Ladestand: {{ states('sensor.tesla_ladestand') }}%\nGeschätzte Ladedauer: {{ states('sensor.geschatzte_ladedauer') }} Stunden\n"
+              }
+            },
+            {
+              "type": "vertical-stack",
+              "title": "Ladeplan & Preisprognose",
+              "cards": [
+                {
+                  "type": "markdown",
+                  "title": "Nächstes Ladefenster",
+                  "content": "{% set next_hour = state_attr('sensor.optimaler_ladeplan', 'next_charging_hour') %}\n{% set hours_needed = state_attr('sensor.optimaler_ladeplan', 'hours_needed') %}\n{% set should_charge = state_attr('sensor.optimaler_ladeplan', 'should_charge_now') %}\n\n**Status:** {% if should_charge == true or should_charge == 'True' %}🟢 Lädt jetzt{% else %}⚪ Wartet{% endif %}\n\n**Nächste Ladung:** {{ next_hour if next_hour else 'Nicht geplant' }}\n\n**Benötigte Stunden:** {{ hours_needed if hours_needed else 0 }} h bis Morgenziel\n\n**Sonnenstunden heute:** {{ states('sensor.sonnenstunden_prognose') }} h\n\n**PV-Prognose (6h):** {{ states('sensor.pv_prognose_nachste_stunden') }} kWh\n"
+                },
+                {
+                  "type": "markdown",
+                  "title": "Optimaler Ladeplan (bis Prognoseende)",
+                  "content": "{% set plan = state_attr('sensor.optimaler_ladeplan', 'charging_plan') -%}\n{% set solar_forecast = state_attr('sensor.solar_prognose_stundlich', 'hourly_forecast') -%}\n{% if plan is none or plan | length == 0 -%}\n**Keine Daten verfügbar**\n\nBitte \"Preisprognose aktualisieren\" ausführen um Tibber-Preise zu laden.\n{%- else -%}\n{% set now_time = now() -%}\n{% set target_time = states('input_number.target_soc_morning') | float(80) -%}\n\n| Zeit | Preis | Laden | SoC | PV | Grund |\n|------|-------|-------|-----|-----|-------|\n{%- for hour in plan -%}\n{%- set hour_time = hour.datetime | as_datetime -%}\n{%- if hour_time >= now_time.replace(minute=0, second=0, microsecond=0) -%}\n{%- set pv_production = namespace(value=0) -%}\n{%- if solar_forecast is not none and solar_forecast is iterable -%}\n{%- for solar in solar_forecast -%}\n{%- if solar.hour == hour.hour -%}\n{%- set pv_production.value = solar.kw -%}\n{%- endif -%}\n{%- endfor -%}\n{%- endif -%}\n{%- set charge_icon = '🟢' if hour.should_charge else '⚪' -%}\n{%- set reason = 'Sehr günstig' if hour.charge_reason == 'price_80' else 'Günstig' if hour.charge_reason == 'price_50' else 'Morgenziel' if hour.charge_reason == 'morning_target' else '-' %}\n| {{ hour.time }} | {{ hour.price | round(3) }} € | {{ charge_icon }} | {{ hour.soc_end }}% | {{ pv_production.value | round(1) }} kW | {{ reason }} |\n{%- endif -%}\n{%- endfor %}\n\n**Legende:**\n- 🟢 = Ladung geplant\n- ⚪ = Keine Ladung  \n- SoC = Erwarteter Ladestand am Ende der Stunde\n- PV = Solarprognose für diese Stunde\n- Grund: Sehr günstig (≤{{ states('input_number.price_threshold_80') }}€), Günstig (≤{{ states('input_number.price_threshold_50') }}€), Morgenziel ({{ target_time }}% bis {{ states('input_number.morning_target_hour') | int }}:00)\n{%- endif %}\n"
+                },
+                {
+                  "type": "entities",
+                  "title": "Prognose-Status",
+                  "entities": [
+                    {
+                      "entity": "sensor.tesla_ladestand",
+                      "name": "Aktueller Ladestand"
+                    },
+                    {
+                      "entity": "sensor.aktueller_strompreis",
+                      "name": "Aktueller Preis"
+                    },
+                    {
+                      "entity": "input_number.price_threshold_80",
+                      "name": "Preisschwelle"
+                    },
+                    {
+                      "entity": "input_number.target_soc_morning",
+                      "name": "Ziel-Ladestand"
+                    },
+                    {
+                      "entity": "sensor.benotigte_energie_bis_ziel",
+                      "name": "Benötigte Energie"
+                    },
+                    {
+                      "entity": "sensor.geschatzte_ladedauer",
+                      "name": "Geschätzte Ladedauer"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Schnellaktionen",
+              "entities": [
+                {
+                  "entity": "script.adjust_pv_charging",
+                  "name": "PV-Ladung jetzt anpassen",
+                  "icon": "mdi:solar-power"
+                },
+                {
+                  "entity": "script.start_emergency_charging",
+                  "name": "Notladung starten",
+                  "icon": "mdi:alert-circle"
+                },
+                {
+                  "entity": "script.stop_charging",
+                  "name": "Ladung stoppen",
+                  "icon": "mdi:stop-circle"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

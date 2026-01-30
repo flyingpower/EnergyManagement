@@ -80,7 +80,7 @@ automation:
                 entity_id: binary_sensor.auto_angeschlossen
                 state: "on"
               - condition: template
-                value_template: "{{ states('sensor.price_charging_should_be_active') == 'true' }}"
+                value_template: "{{ state_attr('sensor.optimaler_ladeplan', 'should_charge_now') == true }}"
             sequence:
               - service: input_select.select_option
                 target:
@@ -158,7 +158,7 @@ automation:
                 data:
                   title: "⚠️ Morgenziel gefährdet"
                   message: >
-                    Das Fahrzeug wird morgen um 7:00 Uhr wahrscheinlich nicht
+                    Das Fahrzeug wird morgen um {{ states('input_number.morning_target_hour') | int }}:00 Uhr wahrscheinlich nicht
                     {{ states('input_number.target_soc_morning') }}% erreichen.
                     Aktueller Ladestand: {{ states('sensor.tesla_ladestand') }}%
               - service: input_select.select_option
@@ -290,6 +290,12 @@ automation:
       - condition: state
         entity_id: binary_sensor.auto_angeschlossen
         state: "on"
+      # Only notify if not already in emergency mode
+      - condition: not
+        conditions:
+          - condition: state
+            entity_id: input_select.charging_state
+            state: "emergency"
     action:
       - service: notify.mobile_app
         data:
