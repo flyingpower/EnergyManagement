@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fridge Cam</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+            background: transparent;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        #container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        #image-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            cursor: pointer;
+        }
+
+        #image {
+            width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .arrow {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            font-size: 32px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+            z-index: 10;
+        }
+
+        .arrow:hover {
+            background: rgba(0, 0, 0, 0.7);
+        }
+
+        .arrow:active {
+            background: rgba(0, 0, 0, 0.9);
+        }
+
+        #prev {
+            left: 10px;
+        }
+
+        #next {
+            right: 10px;
+        }
+
+        #counter {
+            margin-top: 16px;
+            font-size: 18px;
+            color: #333;
+            text-align: center;
+        }
+
+        #hint {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="image-wrapper">
+            <img id="image" src="" alt="Fridge Camera">
+            <button id="prev" class="arrow">‹</button>
+            <button id="next" class="arrow">›</button>
+        </div>
+        <div id="counter">1 / 3</div>
+        <div id="hint">← → arrows, click arrows, or swipe to navigate</div>
+    </div>
+
+    <script>
+        const images = [
+            'http://192.168.0.27/images/image0.jpg',
+            'http://192.168.0.27/images/image1.jpg',
+            'http://192.168.0.27/images/image2.jpg'
+        ];
+
+        let currentIndex = 0;
+        let touchStartX = 0;
+        let touchEndX = 0;
+
+        const imgElement = document.getElementById('image');
+        const counter = document.getElementById('counter');
+        const container = document.getElementById('image-wrapper');
+        const prevBtn = document.getElementById('prev');
+        const nextBtn = document.getElementById('next');
+
+        function updateImage() {
+            // Add timestamp to prevent caching
+            const timestamp = new Date().getTime();
+            imgElement.src = images[currentIndex] + '?t=' + timestamp;
+            counter.textContent = (currentIndex + 1) + ' / ' + images.length;
+        }
+
+        function nextImage() {
+            currentIndex = (currentIndex + 1) % images.length;
+            updateImage();
+        }
+
+        function prevImage() {
+            currentIndex = (currentIndex - 1 + images.length) % images.length;
+            updateImage();
+        }
+
+        // Button click handlers
+        nextBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            nextImage();
+        });
+
+        prevBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            prevImage();
+        });
+
+        // Keyboard navigation
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight') {
+                nextImage();
+            } else if (e.key === 'ArrowLeft') {
+                prevImage();
+            }
+        });
+
+        // Touch/swipe navigation
+        container.addEventListener('touchstart', function(e) {
+            touchStartX = e.changedTouches[0].screenX;
+        }, false);
+
+        container.addEventListener('touchend', function(e) {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipe();
+        }, false);
+
+        function handleSwipe() {
+            if (touchEndX < touchStartX - 50) {
+                nextImage();
+            }
+            if (touchEndX > touchStartX + 50) {
+                prevImage();
+            }
+        }
+
+        // Click image to advance (but not on buttons)
+        imgElement.addEventListener('click', function() {
+            nextImage();
+        });
+
+        // Refresh image every 30 seconds to ensure fresh content
+        setInterval(function() {
+            updateImage();
+        }, 30000);
+
+        // Initial load with cache busting
+        updateImage();
+    </script>
+</body>
+</html>
