@@ -1,0 +1,125 @@
+# Water Meter Integration
+# Webhook receiver for water meter data from external device
+
+input_number:
+  # Store water meter total consumption
+  watermeter_total:
+    name: "Water Meter Total (Raw)"
+    min: 0
+    max: 1000000000
+    step: 1
+    mode: box
+    unit_of_measurement: "L"
+    icon: mdi:water
+
+  # Store water meter flow rate
+  watermeter_flow_rate:
+    name: "Water Meter Flow Rate (Raw)"
+    min: 0
+    max: 1000
+    step: 0.1
+    mode: box
+    unit_of_measurement: "L/min"
+    icon: mdi:water-pump
+
+template:
+  - sensor:
+      # Water Meter Total Consumption
+      - name: "Water Meter Total"
+        unique_id: watermeter_total_consumption
+        state: "{{ states('input_number.watermeter_total') | int(0) }}"
+        unit_of_measurement: "L"
+        device_class: water
+        state_class: total_increasing
+        icon: mdi:counter
+        attributes:
+          device_type: "Water Meter"
+          last_updated: "{{ now().isoformat() }}"
+
+      # Water Meter Flow Rate
+      - name: "Water Meter Flow Rate"
+        unique_id: watermeter_flow_rate
+        state: "{{ states('input_number.watermeter_flow_rate') | float(0) | round(1) }}"
+        unit_of_measurement: "L/min"
+        icon: mdi:water-pump
+        attributes:
+          device_type: "Water Meter"
+          last_updated: "{{ now().isoformat() }}"
+
+      # Water consumption today (calculated from total)
+      - name: "Water Meter Daily"
+        unique_id: watermeter_daily
+        state: >
+          {% set total = states('sensor.water_meter_total') | int(0) %}
+          {% set midnight = today_at() %}
+          {% set total_at_midnight = state_attr('sensor.water_meter_daily', 'total_at_midnight') | int(total) %}
+          {{ (total - total_at_midnight) | int }}
+        unit_of_measurement: "L"
+        device_class: water
+        state_class: measurement
+        icon: mdi:water-check
+        attributes:
+          device_type: "Water Meter"
+          total_at_midnight: >
+            {% if now().hour == 0 and now().minute == 0 %}
+              {{ states('sensor.water_meter_total') | int(0) }}
+            {% else %}
+              {{ state_attr('sensor.water_meter_daily', 'total_at_midnight') | int(states('sensor.water_meter_total') | int(0)) }}
+            {% endif %}
+
+  - binary_sensor:
+      # Water flowing indicator
+      - name: "Water Meter Flowing"
+        unique_id: watermeter_flowing
+        state: >
+          {{ states('sensor.water_meter_flow_rate') | float(0) > 0.1 }}
+        device_class: running
+        icon: >
+          {% if states('sensor.water_meter_flow_rate') | float(0) > 0.1 %}
+            mdi:water-pump
+          {% else %}
+            mdi:water-pump-off
+          {% endif %}
+        attributes:
+          device_type: "Water Meter"
+
+automation:
+  - id: watermeter_webhook
+    alias: "Water Meter - Webhook Receiver"
+    description: "Receives water meter data via webhook and updates sensors"
+    trigger:
+      - platform: webhook
+        webhook_id: watermeter_data
+        allowed_methods:
+          - POST
+        local_only: true
+    action:
+      # Log the webhook call
+      - service: system_log.write
+        data:
+          message: "Water Meter webhook received: {{ trigger.json }}"
+          level: info
+
+      # Update total consumption
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.watermeter_total
+        data:
+          value: "{{ trigger.json.total | int(0) }}"
+
+      # Update flow rate
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.watermeter_flow_rate
+        data:
+          value: "{{ trigger.json.literPerMinute | float(0) }}"
+
+      # Log success
+      - service: system_log.write
+        data:
+          message: >
+            Water Meter updated: Total={{ trigger.json.total }}L,
+            Flow={{ trigger.json.literPerMinute }}L/min
+          level: info
+    mode: queued
+    max: 10
