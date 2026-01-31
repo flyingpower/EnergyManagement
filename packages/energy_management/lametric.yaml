@@ -43,7 +43,7 @@ rest_command:
           {
             "goalData": {
               "start": 15,
-              "current": {{ states('sensor.shellyhtg3_8cbfeaa52b90_temperature') | float(20) | round(1) }},
+              "current": {{ states('sensor.temperatur_wohnzimmer_temperature') | float(20) | round(1) }},
               "end": 30,
               "unit": "°"
             },
