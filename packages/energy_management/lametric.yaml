@@ -1,0 +1,82 @@
+# LaMetric Watch Integration
+# Updates LaMetric display with home energy and environmental data
+
+rest_command:
+  update_lametric:
+    url: "https://192.168.0.104:4343/api/v1/dev/widget/update/com.lametric.f3bc8426115aba47518c57183e80a369/1"
+    method: POST
+    verify_ssl: false
+    headers:
+      Accept: application/json
+      X-Access-Token: "OGI3YTQzMjIzNmNhOTAyYWExNmY0Nzg4ZjZmOTg5ZjRhZDc1MGZiYTAwM2FiZmQxMGEzOWQxMzA4MjQ4OTA5OQ=="
+      Cache-Control: no-cache
+    payload: >
+      {
+        "frames": [
+          {
+            "goalData": {
+              "start": -7000,
+              "current": {{ (states('sensor.tibber_power') | float(0) - states('sensor.tibber_power_production') | float(0)) | round(0) }},
+              "end": 7000,
+              "unit": "W"
+            },
+            "icon": 630
+          },
+          {
+            "goalData": {
+              "start": 0,
+              "current": {{ (states('sensor.garage_power') | float(0)) | round(1) }},
+              "end": 11,
+              "unit": "kW"
+            },
+            "icon": 1172
+          },
+          {
+            "goalData": {
+              "start": -10,
+              "current": {{ states('sensor.wetterstation_pro_wetter_status_temperature') | float(0) | round(1) }},
+              "end": 30,
+              "unit": "°"
+            },
+            "icon": 39039
+          },
+          {
+            "goalData": {
+              "start": 15,
+              "current": {{ states('sensor.shellyhtg3_8cbfeaa52b90_temperature') | float(20) | round(1) }},
+              "end": 30,
+              "unit": "°"
+            },
+            "icon": 8135
+          },
+          {
+            "goalData": {
+              "start": 0,
+              "current": {{ states('sensor.tesla_ladestand') | int(0) }},
+              "end": 100,
+              "unit": "%"
+            },
+            "icon": 1095
+          },
+          {
+            "goalData": {
+              "start": 0,
+              "current": {{ states('sensor.luftqualitat_buro_carbon_dioxide') | int(0) }},
+              "end": 2000,
+              "unit": "p"
+            },
+            "icon": 30662
+          }
+        ]
+      }
+
+automation:
+  - id: lametric_update
+    alias: "LaMetric - Update Display"
+    description: "Updates LaMetric watch with current home data every minute"
+    trigger:
+      - platform: time_pattern
+        minutes: "*"  # Every minute
+    action:
+      - service: rest_command.update_lametric
+    mode: single
