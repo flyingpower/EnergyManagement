@@ -1,0 +1,63 @@
+# Tesla SOC Reliability Enhancement
+# Stores last valid SoC and prevents 0% readings from breaking automations
+
+input_number:
+  # Store last valid Tesla SoC (updated when valid reading received)
+  tesla_soc_last_valid:
+    name: "Tesla SoC (Last Valid)"
+    min: 0
+    max: 100
+    step: 1
+    mode: box
+    unit_of_measurement: "%"
+    icon: mdi:battery-check
+
+automation:
+  # Update stored SoC whenever we get a valid reading (> 0%)
+  - id: tesla_soc_store_valid
+    alias: "Tesla - Store Valid SoC"
+    description: "Stores last valid Tesla SoC to handle network outages"
+    trigger:
+      - platform: state
+        entity_id: sensor.model_3_battery_level
+    condition:
+      # Only store if the new value is valid (> 0% and not unavailable/unknown)
+      - condition: template
+        value_template: >
+          {{ trigger.to_state.state not in ['unavailable', 'unknown', 'none'] }}
+      - condition: template
+        value_template: >
+          {{ trigger.to_state.state | float(0) > 0 }}
+    action:
+      - service: input_number.set_value
+        target:
+          entity_id: input_number.tesla_soc_last_valid
+        data:
+          value: "{{ trigger.to_state.state | float(0) | round(0) }}"
+      - service: system_log.write
+        data:
+          message: "Tesla SoC stored: {{ trigger.to_state.state }}%"
+          level: debug
+    mode: queued
+    max: 5
+
+  # Alert when Tesla connection is lost for extended period
+  - id: tesla_soc_connection_lost
+    alias: "Tesla - Connection Lost Alert"
+    description: "Alerts when Tesla SoC is unavailable for more than 15 minutes"
+    trigger:
+      - platform: state
+        entity_id: sensor.model_3_battery_level
+        to:
+          - unavailable
+          - unknown
+        for:
+          minutes: 15
+    action:
+      - service: notify.mobile_app
+        data:
+          title: "⚠️ Tesla Verbindung verloren"
+          message: >
+            Tesla SoC nicht verfügbar seit 15 Minuten.
+            Verwende letzten gültigen Wert: {{ states('input_number.tesla_soc_last_valid') }}%
+    mode: single
