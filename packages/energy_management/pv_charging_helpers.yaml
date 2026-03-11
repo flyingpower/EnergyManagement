@@ -30,24 +30,28 @@ template:
           {% set consumption = states('sensor.tibber_power') | float(0) %}
           {% set production = states('sensor.tibber_power_production') | float(0) %}
           {% set buffer = states('input_number.pv_charging_buffer') | float(200) %}
-          {% set current_charging = states('sensor.garage_power') | float(0) * 1000 %}
+          {# garage_power is in kW — convert to W #}
+          {% set current_charging_w = states('sensor.garage_power') | float(0) * 1000 %}
 
-          {# Net = consumption - production (positive = importing, negative = exporting) #}
-          {% set net = consumption - production %}
+          {# Check for current override — if set, use that directly #}
+          {% set override = states('input_number.override_charging_current') | int(0) %}
+          {% if override >= 6 %}
+            {{ override }}
+          {% else %}
+            {# Total power available to allocate to the charger:
+               = what the charger is already drawing
+               + what we are currently exporting (negative net)
+               - safety buffer (so we stay slightly below 0W net) #}
+            {% set net = consumption - production %}
+            {% set available_for_charger = current_charging_w - net - buffer %}
 
-          {# Available for charging = production - consumption + current charging #}
-          {% set available = production - consumption + current_charging %}
+            {# Convert to amps: 1-phase 230V #}
+            {% set voltage = 230 %}
+            {% set target_current = (available_for_charger / voltage) | round(0) | int %}
 
-          {# Target: use all available power for charging (aiming for 0W net) #}
-          {# But leave 'buffer' headroom to avoid grid import #}
-          {% set target_power = available - buffer %}
-
-          {# Convert to current: P = U * I, so I = P / U (1-phase, 230V) #}
-          {% set voltage = 230 %}
-          {% set target_current = (target_power / voltage) | round(0) | int %}
-
-          {# Clamp between 6A (minimum) and 32A (maximum) #}
-          {{ [[target_current, 6] | max, 32] | min }}
+            {# Clamp between 6A minimum and 32A maximum #}
+            {{ [[target_current, 6] | max, 32] | min }}
+          {% endif %}
 
       # Net grid consumption (positive = importing, negative = exporting)
       - name: "Net Grid Consumption"

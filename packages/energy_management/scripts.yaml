@@ -126,6 +126,23 @@ script:
           current_charging_amps: "{{ states('sensor.garage_dynamic_charger_limit') | int(0) }}"
           start_timer: "{{ states('input_number.pv_start_condition_timer') | int(0) }}"
           stop_timer: "{{ states('input_number.pv_stop_condition_timer') | int(0) }}"
+          phase_override: "{{ states('input_select.override_phase_mode') }}"
+          current_override: "{{ states('input_number.override_charging_current') | int(0) }}"
+          # Resolve effective phase mode: override wins, else 1_phase for PV
+          effective_phase: >
+            {% if states('input_select.override_phase_mode') in ['1_phase', '3_phase'] %}
+              {{ states('input_select.override_phase_mode') }}
+            {% else %}
+              1_phase
+            {% endif %}
+          # Resolve effective current: current_override wins if >= 6, else calculated
+          effective_current: >
+            {% set ov = states('input_number.override_charging_current') | int(0) %}
+            {% if ov >= 6 %}
+              {{ ov }}
+            {% else %}
+              {{ states('sensor.pv_target_charging_current') | int(0) }}
+            {% endif %}
 
       # ========== Update Start Timer ==========
       - choose:
@@ -205,24 +222,23 @@ script:
               - condition: template
                 value_template: "{{ not is_charging }}"
               - condition: template
-                value_template: "{{ target_current >= 6 }}"
+                value_template: "{{ effective_current >= 6 }}"
             sequence:
               - service: system_log.write
                 data:
-                  message: "PV Smart: Starting with {{ target_current }}A (surplus stable for {{ start_timer }}s / 120s required)"
+                  message: "PV Smart: Starting with {{ effective_current }}A {{ effective_phase }} (surplus stable for {{ start_timer }}s / 120s required)"
                   level: info
 
-              # Force 1-phase mode for PV charging
               - service: easee.set_charger_phase_mode
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  phase_mode: "1_phase"
+                  phase_mode: "{{ effective_phase }}"
               - delay:
                   seconds: 2
               - service: easee.set_charger_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: "{{ target_current }}"
+                  current: "{{ effective_current }}"
                   time_to_live: 0
               - delay:
                   seconds: 2
@@ -238,13 +254,12 @@ script:
                 data:
                   value: 0
 
-              # Send notification
               - service: notify.notify
                 data:
                   title: "☀️ PV-Laden gestartet"
                   message: >
                     Überschuss: {{ surplus }} W (stabil für 2+ Minuten)
-                    Ladestrom: {{ target_current }} A (1-Phase)
+                    Ladestrom: {{ effective_current }} A ({{ effective_phase }})
                     Netz: {{ net_consumption }} W
 
           # CASE 2: Adjust Current (Already Charging)
@@ -254,20 +269,19 @@ script:
               - condition: template
                 value_template: "{{ stop_timer < 300 }}"
               - condition: template
-                value_template: "{{ target_current >= 6 }}"
+                value_template: "{{ effective_current >= 6 }}"
               - condition: template
-                value_template: "{{ target_current != current_charging_amps }}"
+                value_template: "{{ effective_current != current_charging_amps }}"
             sequence:
               - service: system_log.write
                 data:
-                  message: "PV Smart: Adjusting from {{ current_charging_amps }}A to {{ target_current }}A (net: {{ net_consumption }}W)"
+                  message: "PV Smart: Adjusting from {{ current_charging_amps }}A to {{ effective_current }}A (net: {{ net_consumption }}W)"
                   level: debug
 
-              # Dynamically adjust charging current to maintain ~0W net
               - service: easee.set_charger_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: "{{ target_current }}"
+                  current: "{{ effective_current }}"
                   time_to_live: 0
 
           # CASE 3: Stop Charging (timer >= 300 seconds = 5 minutes at minimum current)
@@ -448,7 +462,6 @@ script:
           target_soc: "{{ states('input_number.manual_target_soc') | float(80) }}"
           deadline: "{{ states('input_datetime.manual_deadline') }}"
           pv_surplus: "{{ states('sensor.verfugbarer_pv_uberschuss') | float(0) }}"
-          current_price: "{{ states('sensor.aktueller_strompreis') | float(0) }}"
           min_pv: "{{ states('input_number.min_pv_surplus') | float(1400) }}"
           is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
 
@@ -465,33 +478,33 @@ script:
               - condition: template
                 value_template: "{{ pv_surplus >= min_pv }}"
             sequence:
-              - service: script.adjust_pv_charging
+              - service: script.adjust_pv_charging_smart
 
-          # Use grid charging
+          # Use grid charging — always enforce 3-phase/16A for manual mode
           - conditions:
               - condition: template
                 value_template: "{{ current_soc < target_soc }}"
             sequence:
-              # Only set current when starting charging (not if already charging)
+              # Always apply phase/current for manual mode (even if already charging,
+              # in case we switched from PV mode which uses 1-phase)
+              - service: easee.set_charger_phase_mode
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  phase_mode: "3_phase"
+              - delay:
+                  seconds: 1
+              - service: easee.set_charger_dynamic_limit
+                data:
+                  device_id: 4997305f9b10ff58595e095f3bdf74cd
+                  current: 16
+                  time_to_live: 0
+              - delay:
+                  seconds: 2
               - choose:
                   - conditions:
                       - condition: template
                         value_template: "{{ not is_charging }}"
                     sequence:
-                      # Force 3-phase mode for grid charging (manual mode without PV)
-                      - service: easee.set_charger_phase_mode
-                        data:
-                          device_id: 4997305f9b10ff58595e095f3bdf74cd
-                          phase_mode: "3_phase"
-                      - delay:
-                          seconds: 1
-                      - service: easee.set_charger_dynamic_limit
-                        data:
-                          device_id: 4997305f9b10ff58595e095f3bdf74cd
-                          current: 32
-                          time_to_live: 0
-                      - delay:
-                          seconds: 2
                       - service: easee.action_command
                         data:
                           device_id: 4997305f9b10ff58595e095f3bdf74cd
@@ -543,8 +556,61 @@ script:
             priority: high
 
   # ============================================================================
-  # UTILITY SCRIPTS
+  # SETTINGS MANAGEMENT
   # ============================================================================
+
+  refresh_tibber_prices:
+    alias: "Tibber-Preise jetzt aktualisieren"
+    description: "Lädt Tibber-Preise sofort neu und aktualisiert den Ladeplan"
+    icon: mdi:refresh
+    sequence:
+      - service: script.calculate_optimal_charging_hours
+
+  restore_defaults:
+    alias: "Standardwerte wiederherstellen"
+    description: "Setzt alle Einstellungen auf die Standardwerte zurück"
+    icon: mdi:restore
+    sequence:
+      - service: input_number.set_value
+        target: {entity_id: input_number.target_soc_morning}
+        data: {value: 80}
+      - service: input_number.set_value
+        target: {entity_id: input_number.morning_target_hour}
+        data: {value: 7}
+      - service: input_number.set_value
+        target: {entity_id: input_number.manual_target_soc}
+        data: {value: 80}
+      - service: input_number.set_value
+        target: {entity_id: input_number.price_threshold_80}
+        data: {value: 0.28}
+      - service: input_number.set_value
+        target: {entity_id: input_number.price_threshold_50}
+        data: {value: 0.30}
+      - service: input_number.set_value
+        target: {entity_id: input_number.min_pv_surplus}
+        data: {value: 1400}
+      - service: input_number.set_value
+        target: {entity_id: input_number.pv_charging_buffer}
+        data: {value: 200}
+      - service: input_number.set_value
+        target: {entity_id: input_number.override_charging_current}
+        data: {value: 0}
+      - service: input_select.select_option
+        target: {entity_id: input_select.override_phase_mode}
+        data: {option: "auto"}
+      - service: input_boolean.turn_on
+        target: {entity_id: input_boolean.enable_pv_charging}
+      - service: input_boolean.turn_on
+        target: {entity_id: input_boolean.enable_price_charging}
+      - service: input_boolean.turn_on
+        target: {entity_id: input_boolean.enable_morning_readiness}
+      - service: input_boolean.turn_off
+        target: {entity_id: input_boolean.manual_charging_mode}
+      - service: persistent_notification.create
+        data:
+          title: "Standardwerte wiederhergestellt"
+          message: "Alle Einstellungen wurden auf die Standardwerte zurückgesetzt."
+
 
   stop_charging:
     alias: "Ladung stoppen"
@@ -573,48 +639,3 @@ script:
         data:
           option: "idle"
 
-  # ============================================================================
-  # DIAGNOSTIC SCRIPT
-  # ============================================================================
-
-  test_tibber_forecast:
-    alias: "Test: Tibber Forecast Laden"
-    description: "Manuell Tibber Preisprognose aktualisieren"
-    sequence:
-      - service: input_boolean.turn_on
-        target:
-          entity_id: input_boolean.trigger_price_update
-      - delay:
-          seconds: 3
-      - service: input_boolean.turn_off
-        target:
-          entity_id: input_boolean.trigger_price_update
-      - delay:
-          seconds: 5
-      - service: persistent_notification.create
-        data:
-          title: "Tibber Forecast Status"
-          message: |
-            **Sensor:** {{ states('sensor.tibber_preisprognose') }}
-            **Prices:** {{ state_attr('sensor.tibber_preisprognose', 'prices_today') | length if state_attr('sensor.tibber_preisprognose', 'prices_today') else 'NO DATA' }} Einträge
-            **Last Update:** {{ state_attr('sensor.tibber_preisprognose', 'last_update') }}
-
-  test_store_prices_manually:
-    alias: "Test: Store Prices Manually"
-    sequence:
-      - service: tibber.get_prices
-        response_variable: resp
-      - service: input_text.set_value
-        target:
-          entity_id: input_text.optimal_charging_schedule
-        data:
-          value: "{{ resp | tojson }}"
-      - delay:
-          seconds: 2
-      - service: persistent_notification.create
-        data:
-          title: "Manual Store Test"
-          message: |
-            Stored {{ states('input_text.optimal_charging_schedule') | length }} chars
-            
-            First 150: {{ states('input_text.optimal_charging_schedule')[:150] }}

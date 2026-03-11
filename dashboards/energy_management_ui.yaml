@@ -7,11 +7,9 @@ views:
       # ============================================================================
       # STATUS OVERVIEW
       # ============================================================================
-
       - type: vertical-stack
         title: Status Übersicht
         cards:
-          # Current Charging Mode
           - type: entities
             entities:
               - entity: sensor.aktueller_lademodus
@@ -22,10 +20,8 @@ views:
               - entity: binary_sensor.auto_angeschlossen
                 name: Auto verbunden
 
-          # Key Metrics
           - type: horizontal-stack
             cards:
-              # Tesla SOC Gauge
               - type: gauge
                 entity: sensor.tesla_ladestand
                 name: Ladestand
@@ -35,8 +31,6 @@ views:
                   green: 60
                   yellow: 40
                   red: 20
-
-              # Current Price
               - type: gauge
                 entity: sensor.aktueller_strompreis
                 name: Strompreis
@@ -47,8 +41,6 @@ views:
                   yellow: 0.30
                   red: 0.40
                 unit: EUR/kWh
-
-              # PV Surplus
               - type: gauge
                 entity: sensor.verfugbarer_pv_uberschuss
                 name: PV-Überschuss
@@ -60,7 +52,6 @@ views:
                   red: 0
                 unit: W
 
-          # Charging Power and Status
           - type: entities
             entities:
               - entity: sensor.tesla_ladestatus
@@ -69,19 +60,21 @@ views:
                 name: Ladegerät Status
               - entity: sensor.aktuelle_ladeleistung
                 name: Aktuelle Leistung
-              - entity: sensor.berechneter_ladestrom_pv
-                name: Berechneter Strom (PV)
+              - entity: sensor.net_grid_consumption
+                name: Netz-Bilanz (W)
+              - entity: sensor.pv_target_charging_current
+                name: Ziel-Ladestrom PV
               - entity: sensor.preisniveau
                 name: Aktuelles Preisniveau
 
       # ============================================================================
-      # MANUAL CHARGING CONTROLS
+      # CHARGING CONTROLS
       # ============================================================================
-
       - type: vertical-stack
-        title: Manueller Lademodus
+        title: Ladesteuerung
         cards:
           - type: entities
+            title: Manueller Lademodus
             entities:
               - entity: input_boolean.manual_charging_mode
                 name: Manuellen Modus aktivieren
@@ -102,14 +95,36 @@ views:
                 - entity: sensor.geschatzte_ladedauer
                   name: Geschätzte Dauer
 
+          - type: entities
+            title: Phasen & Strom Überschreiben
+            entities:
+              - entity: input_select.override_phase_mode
+                name: Phasenmodus (auto = vom Modus)
+              - entity: input_number.override_charging_current
+                name: Ladestrom (0 = automatisch)
+
+          - type: entities
+            title: Schnellaktionen
+            entities:
+              - entity: script.adjust_pv_charging_smart
+                name: PV-Ladung jetzt anpassen
+                icon: mdi:solar-power
+              - entity: script.start_emergency_charging
+                name: Notladung starten
+                icon: mdi:alert-circle
+              - entity: script.stop_charging
+                name: Ladung stoppen
+                icon: mdi:stop-circle
+              - entity: script.restore_defaults
+                name: Standardwerte wiederherstellen
+                icon: mdi:restore
+
       # ============================================================================
       # SETTINGS
       # ============================================================================
-
       - type: vertical-stack
         title: Einstellungen
         cards:
-          # Enable/Disable Features
           - type: entities
             title: Aktivierte Funktionen
             entities:
@@ -120,18 +135,18 @@ views:
               - entity: input_boolean.enable_morning_readiness
                 name: Morgen-Bereitschaft
 
-          # Morning Readiness Settings
           - type: entities
             title: Morgen-Bereitschaft
             entities:
               - entity: input_number.target_soc_morning
-                name: Ziel-Ladestand (7:00 Uhr)
+                name: Ziel-Ladestand
+              - entity: input_number.morning_target_hour
+                name: Zielzeit
               - entity: sensor.benotigte_energie_bis_ziel
                 name: Benötigte Energie
               - entity: binary_sensor.morgenziel_erreichbar
                 name: Ziel erreichbar
 
-          # Price Thresholds
           - type: entities
             title: Preisschwellen
             entities:
@@ -142,186 +157,67 @@ views:
               - entity: sensor.aktueller_strompreis
                 name: Aktueller Preis
 
-          # PV Charging Settings
           - type: entities
             title: PV-Laden Einstellungen
             entities:
               - entity: input_number.min_pv_surplus
-                name: Minimaler Überschuss
+                name: Minimaler Überschuss zum Starten
               - entity: input_number.pv_charging_buffer
-                name: Sicherheitspuffer
-              - entity: input_number.pv_hysteresis_time
-                name: Hysterese-Zeit
+                name: Sicherheitspuffer (W)
               - entity: sensor.verfugbarer_pv_uberschuss
                 name: Aktueller Überschuss
 
       # ============================================================================
-      # DETAILED STATUS
+      # CHARGING PLAN & FORECAST
       # ============================================================================
-
-      - type: vertical-stack
-        title: Detaillierter Status
-        cards:
-          # Tesla Information
-          - type: entities
-            title: Tesla
-            entities:
-              - entity: sensor.tesla_ladestand
-                name: Ladestand
-              - entity: sensor.tesla_ladestatus
-                name: Status
-              - entity: sensor.model_3_battery_level
-                name: Batterie (Original)
-              - entity: sensor.model_3_charging
-                name: Ladezustand (Original)
-
-          # Easee Charger Information
-          - type: entities
-            title: Easee Ladegerät
-            entities:
-              - entity: sensor.easee_ladegerat_status
-                name: Status
-              - entity: sensor.aktuelle_ladeleistung
-                name: Leistung
-              - entity: sensor.garage_power
-                name: Leistung (Original kW)
-              - entity: sensor.garage_status
-                name: Status (Original)
-              - entity: sensor.garage_session_energy
-                name: Geladene Energie (kWh)
-
-          # Tibber Information
-          - type: entities
-            title: Tibber Energie
-            entities:
-              - entity: sensor.aktueller_strompreis
-                name: Aktueller Preis
-              - entity: sensor.preisniveau
-                name: Preisniveau
-              - entity: sensor.verfugbarer_pv_uberschuss
-                name: PV-Überschuss
-              - entity: sensor.tibber_power
-                name: Verbrauch (W)
-              - entity: sensor.tibber_power_production
-                name: Produktion (W)
-              - entity: sensor.tibber_electricity_price
-                name: Preis (Original)
-
-      # ============================================================================
-      # HISTORY & STATISTICS
-      # ============================================================================
-
-      - type: vertical-stack
-        title: Verlauf
-        cards:
-          # SOC History
-          - type: history-graph
-            title: Ladestand Verlauf (24h)
-            hours_to_show: 24
-            entities:
-              - entity: sensor.tesla_ladestand
-
-          # Charging Power History
-          - type: history-graph
-            title: Ladeleistung Verlauf (24h)
-            hours_to_show: 24
-            entities:
-              - entity: sensor.aktuelle_ladeleistung
-
-          # Price History
-          - type: history-graph
-            title: Strompreis Verlauf (24h)
-            hours_to_show: 24
-            entities:
-              - entity: sensor.aktueller_strompreis
-
-          # PV Surplus History
-          - type: history-graph
-            title: PV-Überschuss Verlauf (24h)
-            hours_to_show: 24
-            entities:
-              - entity: sensor.verfugbarer_pv_uberschuss
-
-          # Charging Mode History
-          - type: history-graph
-            title: Lademodus Verlauf (24h)
-            hours_to_show: 24
-            entities:
-              - entity: input_select.charging_state
-
-      # ============================================================================
-      # CHARGING PLAN FORECAST
-      # ============================================================================
-
       - type: vertical-stack
         title: Ladeplan & Preisprognose
         cards:
-          # Next Charging Window
           - type: markdown
-            title: Nächstes Ladefenster
+            title: Aktueller Status
             content: >
               {% set next_hour = state_attr('sensor.optimaler_ladeplan', 'next_charging_hour') %}
               {% set hours_needed = state_attr('sensor.optimaler_ladeplan', 'hours_needed') %}
               {% set should_charge = state_attr('sensor.optimaler_ladeplan', 'should_charge_now') %}
 
-              **Status:** {% if should_charge == true or should_charge == 'True' %}🟢 Lädt jetzt{% else %}⚪ Wartet{% endif %}
+              **Laden jetzt:** {% if should_charge == true or should_charge == 'True' %}🟢 Ja{% else %}⚪ Nein{% endif %}
 
               **Nächste Ladung:** {{ next_hour if next_hour else 'Nicht geplant' }}
 
-              **Benötigte Stunden:** {{ hours_needed if hours_needed else 0 }} h bis Morgenziel
+              **Benötigte Stunden:** {{ hours_needed if hours_needed is not none else 0 }} h bis Morgenziel
 
               **Sonnenstunden heute:** {{ states('sensor.sonnenstunden_prognose') }} h
 
               **PV-Prognose (6h):** {{ states('sensor.pv_prognose_nachste_stunden') }} kWh
 
-          # Optimal Charging Plan Timetable
           - type: markdown
-            title: Optimaler Ladeplan (bis Prognoseende)
+            title: Optimaler Ladeplan
             content: >
               {% set plan = state_attr('sensor.optimaler_ladeplan', 'charging_plan') %}
               {% set solar_forecast = state_attr('sensor.solar_prognose_stundlich', 'hourly_forecast') %}
               {% if plan is none or plan | length == 0 %}
-                **Keine Daten verfügbar**
-
-                Bitte "Preisprognose aktualisieren" ausführen um Tibber-Preise zu laden.
+              **Keine Daten verfügbar** — Tibber-Preise werden täglich um 13:00 Uhr aktualisiert.
               {% else %}
-                {% set now_time = now() %}
-                {% set target_time = states('input_number.target_soc_morning') | float(80) %}
+              {% set now_time = now() %}
 
-                | Zeit | Preis | Laden | SoC | PV | Grund |
-                |------|-------|-------|-----|-----|-------|
-                {% for hour in plan %}
-                  {% set hour_time = hour.datetime | as_datetime %}
-                  {% if hour_time >= now_time %}
-                    {# Find matching solar forecast #}
-                    {% set pv_production = namespace(value=0) %}
-                    {% if solar_forecast is not none and solar_forecast is iterable %}
-                      {% for solar in solar_forecast %}
-                        {% if solar.hour == hour.hour %}
-                          {% set pv_production.value = solar.kw %}
-                        {% endif %}
-                      {% endfor %}
-                    {% endif %}
+              | Zeit | Preis | Laden | SoC | PV | Grund |
+              |------|-------|-------|-----|----|-------|
+              {% for hour in plan %}
+              {%- set hour_time = hour.datetime | as_datetime %}
+              {%- if hour_time >= now_time.replace(minute=0, second=0, microsecond=0) %}
+              {%- set pv = namespace(v=0) %}
+              {%- if solar_forecast is not none and solar_forecast is iterable %}
+              {%- for s in solar_forecast %}{%- if s.hour == hour.hour %}{%- set pv.v = s.kw %}{%- endif %}{%- endfor %}
+              {%- endif %}
+              {%- set icon = '🟢' if hour.should_charge else '⚪' %}
+              {%- set reason = 'Sehr günstig' if hour.charge_reason == 'price_80' else 'Günstig' if hour.charge_reason == 'price_50' else 'Morgenziel' if hour.charge_reason == 'morning_target' else '-' %}
+              | {{ hour.time }} | {{ hour.price | round(3) }}€ | {{ icon }} | {{ hour.soc_end }}% | {{ pv.v | round(1) }}kW | {{ reason }} |
+              {%- endif %}
+              {% endfor %}
 
-                    {# Charging indicator #}
-                    {% set charge_icon = '🟢' if hour.should_charge else '⚪' %}
-
-                    {# Charge reason display #}
-                    {% set reason = 'Sehr günstig' if hour.charge_reason == 'price_80' else 'Günstig' if hour.charge_reason == 'price_50' else 'Morgenziel' if hour.charge_reason == 'morning_target' else '-' %}
-
-                    | {{ hour.time }} | {{ hour.price | round(3) }} € | {{ charge_icon }} | {{ hour.soc_end }}% | {{ pv_production.value | round(1) }} kW | {{ reason }} |
-                  {% endif %}
-                {% endfor %}
-
-                **Legende:**
-                - 🟢 = Ladung geplant
-                - ⚪ = Keine Ladung
-                - SoC = Erwarteter Ladestand am Ende der Stunde
-                - PV = Solarprognose für diese Stunde
-                - Grund: Sehr günstig (≤{{ states('input_number.price_threshold_80') }}€), Günstig (≤{{ states('input_number.price_threshold_50') }}€), Morgenziel ({{ target_time }}% bis 7:00)
+              🟢 = Ladung geplant · ⚪ = keine Ladung · Sehr günstig ≤{{ states('input_number.price_threshold_80') }}€ · Günstig ≤{{ states('input_number.price_threshold_50') }}€
               {% endif %}
 
-          # Current Forecast Status
           - type: entities
             title: Prognose-Status
             entities:
@@ -337,11 +233,94 @@ views:
                 name: Benötigte Energie
               - entity: sensor.geschatzte_ladedauer
                 name: Geschätzte Ladedauer
+              - entity: script.refresh_tibber_prices
+                name: Tibber-Preise jetzt laden
+                icon: mdi:refresh
 
       # ============================================================================
-      # ALERTS & WARNINGS
+      # HISTORY
       # ============================================================================
+      - type: vertical-stack
+        title: Verlauf
+        cards:
+          - type: history-graph
+            title: Ladestand Verlauf (24h)
+            hours_to_show: 24
+            entities:
+              - entity: sensor.tesla_ladestand
+          - type: history-graph
+            title: Ladeleistung & Netz-Bilanz (24h)
+            hours_to_show: 24
+            entities:
+              - entity: sensor.aktuelle_ladeleistung
+              - entity: sensor.net_grid_consumption
+          - type: history-graph
+            title: Strompreis Verlauf (24h)
+            hours_to_show: 24
+            entities:
+              - entity: sensor.aktueller_strompreis
+          - type: history-graph
+            title: PV-Überschuss Verlauf (24h)
+            hours_to_show: 24
+            entities:
+              - entity: sensor.verfugbarer_pv_uberschuss
+          - type: history-graph
+            title: Lademodus Verlauf (24h)
+            hours_to_show: 24
+            entities:
+              - entity: input_select.charging_state
 
+      # ============================================================================
+      # DETAILED STATUS
+      # ============================================================================
+      - type: vertical-stack
+        title: Detaillierter Status
+        cards:
+          - type: entities
+            title: Tesla
+            entities:
+              - entity: sensor.tesla_ladestand
+                name: Ladestand
+              - entity: sensor.tesla_ladestatus
+                name: Status
+              - entity: sensor.model_3_battery_level
+                name: Batterie (Original)
+              - entity: sensor.model_3_charging
+                name: Ladezustand (Original)
+
+          - type: entities
+            title: Easee Ladegerät
+            entities:
+              - entity: sensor.easee_ladegerat_status
+                name: Status
+              - entity: sensor.aktuelle_ladeleistung
+                name: Leistung
+              - entity: sensor.garage_power
+                name: Leistung (Original kW)
+              - entity: sensor.garage_status
+                name: Status (Original)
+              - entity: sensor.garage_session_energy
+                name: Geladene Energie (kWh)
+
+          - type: entities
+            title: Tibber Energie
+            entities:
+              - entity: sensor.aktueller_strompreis
+                name: Aktueller Preis
+              - entity: sensor.preisniveau
+                name: Preisniveau
+              - entity: sensor.tibber_power
+                name: Verbrauch (W)
+              - entity: sensor.tibber_power_production
+                name: Produktion (W)
+              - entity: sensor.net_grid_consumption
+                name: Netz-Bilanz (W)
+              - entity: sensor.tibber_electricity_price
+                name: Preis (Original)
+
+      # ============================================================================
+      # ALERTS
+      # ============================================================================
       - type: conditional
         conditions:
           - entity: binary_sensor.notladung_erforderlich
@@ -363,25 +342,8 @@ views:
           content: |
             ## ⚠️ Morgenziel gefährdet
 
-            Das Fahrzeug wird morgen um 7:00 Uhr wahrscheinlich nicht
+            Das Fahrzeug wird morgen um {{ states('input_number.morning_target_hour') | int }}:00 Uhr wahrscheinlich nicht
             {{ states('input_number.target_soc_morning') }}% erreichen.
 
             Aktueller Ladestand: {{ states('sensor.tesla_ladestand') }}%
             Geschätzte Ladedauer: {{ states('sensor.geschatzte_ladedauer') }} Stunden
-
-      # ============================================================================
-      # QUICK ACTIONS
-      # ============================================================================
-
-      - type: entities
-        title: Schnellaktionen
-        entities:
-          - entity: script.adjust_pv_charging
-            name: PV-Ladung jetzt anpassen
-            icon: mdi:solar-power
-          - entity: script.start_emergency_charging
-            name: Notladung starten
-            icon: mdi:alert-circle
-          - entity: script.stop_charging
-            name: Ladung stoppen
-            icon: mdi:stop-circle

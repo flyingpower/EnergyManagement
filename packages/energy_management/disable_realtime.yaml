@@ -1,0 +1,37 @@
+# Disable realtime streaming for problematic integrations
+# These cause MainThread blocking and watchdog restarts
+
+# Note: These settings override integration defaults
+# To properly apply, go to: Settings → Devices & Services → [Integration]
+# Click the three dots → [Enable/Disable realtime option]
+
+automation:
+  - id: disable_tibber_realtime_warning
+    alias: "System - Tibber Realtime Disabled"
+    description: "Notification that Tibber realtime streaming is disabled to prevent watchdog timeouts"
+    trigger:
+      - platform: homeassistant
+        event: start
+    action:
+      - service: system_log.write
+        data:
+          message: >
+            ⚠️ IMPORTANT: Tibber realtime streaming is DISABLED to prevent MainThread blocking.
+            This is intentional - polling every 30 seconds is sufficient and prevents restart loops.
+            Do NOT re-enable realtime streaming or Home Assistant will restart repeatedly.
+          level: warning
+
+  - id: disable_easee_realtime_warning
+    alias: "System - Easee Realtime Disabled"
+    description: "Notification that Easee realtime streaming is disabled to prevent watchdog timeouts"
+    trigger:
+      - platform: homeassistant
+        event: start
+    action:
+      - service: system_log.write
+        data:
+          message: >
+            ⚠️ IMPORTANT: Easee realtime streaming is DISABLED to prevent MainThread blocking.
+            This is intentional - polling every 30 seconds is sufficient and prevents restart loops.
+            Do NOT re-enable realtime streaming or Home Assistant will restart repeatedly.
+          level: warning

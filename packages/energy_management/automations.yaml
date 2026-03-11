@@ -130,8 +130,12 @@ automation:
     alias: "Energie Management - Optimale Ladezeiten berechnen"
     description: "Berechnet die günstigsten Ladezeiten basierend auf Tibber-Preisen"
     trigger:
+      - platform: homeassistant
+        event: start
       - platform: time
-        at: "13:00:00"  # When Tibber updates prices
+        at: "13:00:00"  # When Tibber publishes next-day prices
+      - platform: time
+        at: "00:05:00"  # Refresh at midnight so today's prices are current
       - platform: state
         entity_id: sensor.tibber_electricity_price
     action:

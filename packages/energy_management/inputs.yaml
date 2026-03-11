@@ -1,5 +1,7 @@
 # Energy Management System - Input Helpers
 # These entities allow user control and configuration of the charging system
+# Note: NO `initial:` values are set on user-facing inputs so that Home Assistant
+# restores the last-used value after a restart. Use the "Standardwerte" script to reset.
 
 input_number:
   # Morning Readiness Target
@@ -10,7 +12,6 @@ input_number:
     step: 5
     unit_of_measurement: "%"
     icon: mdi:battery-charging-80
-    initial: 80
 
   # Morning Target Hour
   morning_target_hour:
@@ -20,7 +21,6 @@ input_number:
     step: 1
     unit_of_measurement: "Uhr"
     icon: mdi:clock-outline
-    initial: 7
 
   # Manual Charging Target
   manual_target_soc:
@@ -30,7 +30,6 @@ input_number:
     step: 5
     unit_of_measurement: "%"
     icon: mdi:battery-charging
-    initial: 80
 
   # Price Thresholds
   price_threshold_50:
@@ -40,7 +39,6 @@ input_number:
     step: 0.01
     unit_of_measurement: "EUR/kWh"
     icon: mdi:currency-eur
-    initial: 0.30
 
   price_threshold_80:
     name: "Preisschwelle für 80% Ladung"
@@ -49,7 +47,6 @@ input_number:
     step: 0.01
     unit_of_measurement: "EUR/kWh"
     icon: mdi:currency-eur
-    initial: 0.28
 
   # Minimum PV Surplus
   min_pv_surplus:
@@ -59,7 +56,6 @@ input_number:
     step: 100
     unit_of_measurement: "W"
     icon: mdi:solar-power
-    initial: 1400
 
   # PV Charging Buffer
   pv_charging_buffer:
@@ -69,9 +65,8 @@ input_number:
     step: 50
     unit_of_measurement: "W"
     icon: mdi:buffer
-    initial: 200
 
-  # Check Interval (how often to check/adjust PV charging)
+  # Check Interval (UI label only — actual timer logic uses pv_start/stop_condition_timer)
   pv_hysteresis_time:
     name: "PV Prüfintervall"
     min: 1
@@ -79,38 +74,36 @@ input_number:
     step: 1
     unit_of_measurement: "min"
     icon: mdi:timer-sand
-    initial: 1
+
+  # Manual current override: 0 = auto (calculated), 6-32 = force this amperage
+  override_charging_current:
+    name: "Ladestrom Überschreiben (0=Auto)"
+    min: 0
+    max: 32
+    step: 1
+    unit_of_measurement: "A"
+    icon: mdi:current-ac
 
 input_boolean:
   # Manual Charging Mode Toggle
   manual_charging_mode:
     name: "Manueller Lademodus"
     icon: mdi:car-electric
-    initial: false
 
   # Enable/Disable PV Charging
   enable_pv_charging:
     name: "PV-Laden aktiviert"
     icon: mdi:solar-power
-    initial: true
 
   # Enable/Disable Price-Based Charging
   enable_price_charging:
     name: "Preisbasiertes Laden aktiviert"
     icon: mdi:currency-eur
-    initial: true
 
   # Enable Morning Readiness Check
   enable_morning_readiness:
     name: "Morgen-Bereitschaft aktiviert"
     icon: mdi:alarm
-    initial: true
-
-  # Trigger Price Forecast Update
-  trigger_price_update:
-    name: "Preisprognose aktualisieren"
-    icon: mdi:refresh
-    initial: false
 
 input_datetime:
   # Manual Charging Deadline
@@ -131,8 +124,16 @@ input_select:
       - "manual"
       - "emergency"
       - "morning_readiness"
-    initial: "idle"
     icon: mdi:state-machine
+
+  # Phase mode override: auto = let the mode decide, 1_phase / 3_phase = force
+  override_phase_mode:
+    name: "Phasenmodus Überschreiben"
+    options:
+      - "auto"
+      - "1_phase"
+      - "3_phase"
+    icon: mdi:sine-wave
 
   # Charging Control Method
   charging_control_method:
@@ -140,5 +141,4 @@ input_select:
     options:
       - "tesla"
       - "easee"
-    initial: "easee"
     icon: mdi:cog
