@@ -38,7 +38,7 @@ automation:
       - variables:
           should_charge: "{{ state_attr('sensor.optimaler_ladeplan', 'should_charge_now') | default(false) }}"
           is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
-          current_soc: "{{ states('sensor.tesla_ladestand') | float(0) }}"
+          current_soc: "{{ states('sensor.aktives_auto_ladestand') | float(0) }}"
 
       # Log decision info
       - service: system_log.write

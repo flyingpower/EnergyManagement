@@ -138,6 +138,15 @@ automation:
         at: "00:05:00"  # Refresh at midnight so today's prices are current
       - platform: state
         entity_id: sensor.tibber_electricity_price
+      # Recalculate immediately when feature toggles or thresholds change
+      - platform: state
+        entity_id:
+          - input_boolean.enable_price_charging
+          - input_boolean.enable_morning_readiness
+          - input_number.price_threshold_80
+          - input_number.price_threshold_50
+          - input_number.target_soc_morning
+          - input_number.morning_target_hour
     action:
       - service: script.calculate_optimal_charging_hours
 
@@ -164,7 +173,7 @@ automation:
                   message: >
                     Das Fahrzeug wird morgen um {{ states('input_number.morning_target_hour') | int }}:00 Uhr wahrscheinlich nicht
                     {{ states('input_number.target_soc_morning') }}% erreichen.
-                    Aktueller Ladestand: {{ states('sensor.tesla_ladestand') }}%
+                    Aktueller Ladestand: {{ states('sensor.aktives_auto_ladestand') }}% ({{ states('sensor.aktives_auto') }})
               - service: input_select.select_option
                 target:
                   entity_id: input_select.charging_state
@@ -205,7 +214,7 @@ automation:
     trigger:
       - platform: template
         value_template: >
-          {{ states('sensor.tesla_ladestand') | float >=
+          {{ states('sensor.aktives_auto_ladestand') | float >=
              states('input_number.manual_target_soc') | float }}
     condition:
       - condition: state
@@ -216,7 +225,7 @@ automation:
         data:
           title: "✅ Ladeziel erreicht"
           message: >
-            Das Fahrzeug hat {{ states('sensor.tesla_ladestand') }}% erreicht.
+            Das Fahrzeug hat {{ states('sensor.aktives_auto_ladestand') }}% erreicht.
             Manuelle Ladung abgeschlossen.
       - service: input_boolean.turn_off
         target:
@@ -260,7 +269,7 @@ automation:
           title: "🔌 Ladung gestartet"
           message: >
             Modus: {{ states('sensor.aktueller_lademodus') }}
-            Aktuell: {{ states('sensor.tesla_ladestand') }}%
+            Aktuell: {{ states('sensor.aktives_auto_ladestand') }}% ({{ states('sensor.aktives_auto') }})
             {% if is_state('input_select.charging_state', 'pv') %}
             PV-Überschuss: {{ states('sensor.verfugbarer_pv_uberschuss') }}W
             {% elif is_state('input_select.charging_state', 'price') %}
@@ -279,7 +288,7 @@ automation:
         data:
           title: "✅ Ladung abgeschlossen"
           message: >
-            Ladestand: {{ states('sensor.tesla_ladestand') }}%
+            Ladestand: {{ states('sensor.aktives_auto_ladestand') }}% ({{ states('sensor.aktives_auto') }})
             Modus: {{ states('sensor.aktueller_lademodus') }}
             Energie geladen: {{ states('sensor.garage_session_energy') }} kWh
 
@@ -288,7 +297,7 @@ automation:
     description: "Warnt bei kritisch niedrigem Ladestand"
     trigger:
       - platform: numeric_state
-        entity_id: sensor.tesla_ladestand
+        entity_id: sensor.aktives_auto_ladestand
         below: 20
     condition:
       - condition: state
@@ -305,7 +314,7 @@ automation:
         data:
           title: "⚠️ Notladung aktiviert"
           message: >
-            Kritischer Ladestand: {{ states('sensor.tesla_ladestand') }}%
+            Kritischer Ladestand: {{ states('sensor.aktives_auto_ladestand') }}% ({{ states('sensor.aktives_auto') }})
             Notladung wurde gestartet.
           data:
             priority: high

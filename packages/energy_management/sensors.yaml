@@ -1,6 +1,5 @@
 # Energy Management System - Template Sensors
 # These sensors calculate values and provide status information
-# UPDATED with verified entity IDs
 
 template:
   - sensor:
@@ -77,6 +76,10 @@ template:
           {{ states('sensor.tibber_electricity_price') | float(0) | round(4) }}
         icon: mdi:currency-eur
 
+      # ============================================================================
+      # TESLA SENSORS
+      # ============================================================================
+
       # Tesla SOC (with fallback to last valid value)
       - name: "Tesla Ladestand"
         unique_id: energy_mgmt_tesla_soc
@@ -85,7 +88,6 @@ template:
         state: >
           {% set current = states('sensor.model_3_battery_level') %}
           {% if current in ['unavailable', 'unknown', 'none'] or current | float(0) <= 0 %}
-            {# Use last valid stored value when current is unavailable or 0% #}
             {{ states('input_number.tesla_soc_last_valid') | float(50) | round(0) }}
           {% else %}
             {{ current | float(0) | round(0) }}
@@ -135,6 +137,162 @@ template:
           {% else %}
             mdi:battery
           {% endif %}
+
+      # ============================================================================
+      # KIA EV3 SENSORS
+      # ============================================================================
+
+      # Kia EV3 SOC (with staleness fallback: if last update > 24h, use 30%)
+      - name: "Kia Ladestand"
+        unique_id: energy_mgmt_kia_soc
+        unit_of_measurement: "%"
+        device_class: battery
+        state: >
+          {% set current = states('sensor.ev3_ev_battery_level') %}
+          {% set last_changed = states.sensor.ev3_ev_battery_level.last_changed if states.sensor.ev3_ev_battery_level is defined else none %}
+          {% set stale = (last_changed is none) or (now() - last_changed).total_seconds() > 86400 %}
+          {% if current in ['unavailable', 'unknown', 'none'] or stale %}
+            30
+          {% else %}
+            {{ current | float(0) | round(0) }}
+          {% endif %}
+        icon: >
+          {% set current = states('sensor.ev3_ev_battery_level') %}
+          {% set last_changed = states.sensor.ev3_ev_battery_level.last_changed if states.sensor.ev3_ev_battery_level is defined else none %}
+          {% set stale = (last_changed is none) or (now() - last_changed).total_seconds() > 86400 %}
+          {% if current in ['unavailable', 'unknown', 'none'] or stale %}
+            mdi:battery-alert
+          {% else %}
+            mdi:battery-charging
+          {% endif %}
+        attributes:
+          source: >
+            {% set current = states('sensor.ev3_ev_battery_level') %}
+            {% set last_changed = states.sensor.ev3_ev_battery_level.last_changed if states.sensor.ev3_ev_battery_level is defined else none %}
+            {% set stale = (last_changed is none) or (now() - last_changed).total_seconds() > 86400 %}
+            {% if current in ['unavailable', 'unknown', 'none'] %}
+              unavailable
+            {% elif stale %}
+              stale_fallback
+            {% else %}
+              live
+            {% endif %}
+          raw_soc: "{{ states('sensor.ev3_ev_battery_level') }}"
+          last_changed: >
+            {% set last_changed = states.sensor.ev3_ev_battery_level.last_changed if states.sensor.ev3_ev_battery_level is defined else none %}
+            {{ last_changed.isoformat() if last_changed else 'unknown' }}
+
+      # Kia EV3 Charging Status
+      - name: "Kia Ladestatus"
+        unique_id: energy_mgmt_kia_charging_status
+        state: >
+          {% set status = states('sensor.ev3_ev_battery_charge') %}
+          {% if status in ['charging', 'Charging'] %}
+            Lädt
+          {% elif status in ['complete', 'Complete', 'plugged_in_fully_charged'] %}
+            Vollständig
+          {% elif status in ['not_charging', 'Not charging', 'plugged_in_not_charging'] %}
+            Gestoppt
+          {% elif status in ['off', 'Off', 'not_plugged_in'] %}
+            Nicht verbunden
+          {% else %}
+            {{ status }}
+          {% endif %}
+        icon: >
+          {% set status = states('sensor.ev3_ev_battery_charge') %}
+          {% if status in ['charging', 'Charging'] %}
+            mdi:battery-charging
+          {% elif status in ['complete', 'Complete'] %}
+            mdi:battery-check
+          {% elif status in ['off', 'Off', 'not_plugged_in'] %}
+            mdi:power-plug-off
+          {% else %}
+            mdi:battery
+          {% endif %}
+
+      # ============================================================================
+      # ACTIVE CAR DETECTION
+      # Determines which car is currently plugged into the Easee charger.
+      # Priority: (1) Tesla plugged in per Easee, (2) Kia plug sensor says plugged in,
+      # (3) fallback to car with oldest/stale SoC timestamp (needs charging more urgently)
+      # ============================================================================
+
+      - name: "Aktives Auto"
+        unique_id: energy_mgmt_active_car
+        state: >
+          {% set easee_connected = not is_state('sensor.garage_status', 'disconnected') %}
+          {% set tesla_plug = states('sensor.model_3_charging') %}
+          {% set kia_plugged = is_state('binary_sensor.ev3_ev_battery_plug', 'on') %}
+
+          {# Tesla is considered plugged in if Easee is active AND Tesla is not reporting Disconnected #}
+          {% set tesla_plugged = easee_connected and tesla_plug not in ['Disconnected', 'unavailable', 'unknown'] %}
+
+          {% if tesla_plugged %}
+            Tesla Model 3
+          {% elif kia_plugged %}
+            Kia EV3
+          {% else %}
+            {# Fallback: pick car with older/staler SoC timestamp #}
+            {% set tesla_changed = states.sensor.model_3_battery_level.last_changed if states.sensor.model_3_battery_level is defined else none %}
+            {% set kia_changed = states.sensor.ev3_ev_battery_level.last_changed if states.sensor.ev3_ev_battery_level is defined else none %}
+            {% set tesla_invalid = states('sensor.model_3_battery_level') in ['unavailable', 'unknown', 'none'] %}
+            {% set kia_invalid = states('sensor.ev3_ev_battery_level') in ['unavailable', 'unknown', 'none'] %}
+            {% if tesla_invalid and not kia_invalid %}
+              Tesla Model 3
+            {% elif kia_invalid and not tesla_invalid %}
+              Kia EV3
+            {% elif tesla_changed is none %}
+              Tesla Model 3
+            {% elif kia_changed is none %}
+              Kia EV3
+            {% elif tesla_changed <= kia_changed %}
+              Tesla Model 3
+            {% else %}
+              Kia EV3
+            {% endif %}
+          {% endif %}
+        icon: >
+          {% if states('sensor.aktives_auto') == 'Kia EV3' %}
+            mdi:car-electric
+          {% else %}
+            mdi:car-electric-outline
+          {% endif %}
+        attributes:
+          detection_method: >
+            {% set easee_connected = not is_state('sensor.garage_status', 'disconnected') %}
+            {% set tesla_plug = states('sensor.model_3_charging') %}
+            {% set kia_plugged = is_state('binary_sensor.ev3_ev_battery_plug', 'on') %}
+            {% set tesla_plugged = easee_connected and tesla_plug not in ['Disconnected', 'unavailable', 'unknown'] %}
+            {% if tesla_plugged %}
+              plug_state_tesla
+            {% elif kia_plugged %}
+              plug_state_kia
+            {% else %}
+              fallback_timestamp
+            {% endif %}
+          active_soc: >
+            {% if states('sensor.aktives_auto') == 'Kia EV3' %}
+              {{ states('sensor.kia_ladestand') }}
+            {% else %}
+              {{ states('sensor.tesla_ladestand') }}
+            {% endif %}
+
+      # Active car SoC — single entity used by all charging logic
+      - name: "Aktives Auto Ladestand"
+        unique_id: energy_mgmt_active_car_soc
+        unit_of_measurement: "%"
+        device_class: battery
+        state: >
+          {% if states('sensor.aktives_auto') == 'Kia EV3' %}
+            {{ states('sensor.kia_ladestand') | float(30) | round(0) }}
+          {% else %}
+            {{ states('sensor.tesla_ladestand') | float(30) | round(0) }}
+          {% endif %}
+        icon: mdi:battery-charging
+
+      # ============================================================================
+      # CHARGER / GRID SENSORS
+      # ============================================================================
 
       # Car Connected Sensor (for templates that reference sensor.auto_angeschlossen)
       - name: "Auto Angeschlossen"
@@ -186,15 +344,15 @@ template:
           {{ (states('sensor.garage_power') | float(0) * 1000) | round(0) }}
         icon: mdi:lightning-bolt
 
-      # Estimated kWh Needed to Target
+      # Estimated kWh Needed to Target (uses active car SoC and capacity)
       - name: "Benötigte Energie bis Ziel"
         unique_id: energy_mgmt_kwh_needed
         unit_of_measurement: "kWh"
         state: >
-          {% set current_soc = states('sensor.tesla_ladestand') | float(0) %}
+          {% set current_soc = states('sensor.aktives_auto_ladestand') | float(0) %}
           {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
-          {% set battery_capacity = 75 %}  {# Tesla Model 3 battery in kWh #}
-          {% set efficiency_loss = 1.15 %}  {# 15% charging loss #}
+          {% set battery_capacity = 82 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
+          {% set efficiency_loss = 1.15 %}
           {% if target_soc > current_soc %}
             {{ (((target_soc - current_soc) / 100 * battery_capacity) * efficiency_loss) | round(2) }}
           {% else %}
@@ -207,7 +365,7 @@ template:
         unit_of_measurement: "h"
         state: >
           {% set kwh_needed = states('sensor.benotigte_energie_bis_ziel') | float(0) %}
-          {% set charger_power = 7.4 %}  {# Easee charger power in kW #}
+          {% set charger_power = 7.4 %}
           {% if kwh_needed > 0 %}
             {{ (kwh_needed / charger_power) | round(1) }}
           {% else %}
@@ -243,7 +401,6 @@ template:
 
   - binary_sensor:
       # Car Connected Binary Sensor
-      # Using Easee charger status - car is connected when NOT disconnected
       - name: "Auto Angeschlossen"
         unique_id: energy_mgmt_car_connected_binary
         state: >
@@ -256,14 +413,20 @@ template:
             mdi:power-plug-off
           {% endif %}
 
-      # Emergency Charging Needed
+      # Emergency Charging Needed (based on active car)
       - name: "Notladung Erforderlich"
         unique_id: energy_mgmt_emergency_needed
         state: >
-          {% set soc = states('sensor.tesla_ladestand') | float(100) %}
-          {% set source = state_attr('sensor.tesla_ladestand', 'source') %}
-          {# Only trigger if SoC is valid (>0%, <20%) and data is live (not fallback) #}
-          {{ soc > 0 and soc < 20 and source == 'live' }}
+          {% set soc = states('sensor.aktives_auto_ladestand') | float(100) %}
+          {% set active_car = states('sensor.aktives_auto') %}
+          {# For Tesla check source attribute; for Kia check that it's not stale fallback #}
+          {% if active_car == 'Tesla Model 3' %}
+            {% set source = state_attr('sensor.tesla_ladestand', 'source') %}
+            {{ soc > 0 and soc < 20 and source == 'live' }}
+          {% else %}
+            {% set source = state_attr('sensor.kia_ladestand', 'source') %}
+            {{ soc > 0 and soc < 20 and source == 'live' }}
+          {% endif %}
         device_class: problem
         icon: >
           {% if is_state('binary_sensor.notladung_erforderlich', 'on') %}
@@ -271,16 +434,14 @@ template:
           {% else %}
             mdi:check-circle
           {% endif %}
-        attributes:
-          soc_source: "{{ state_attr('sensor.tesla_ladestand', 'source') }}"
 
       # Morning Target Will Be Met
       - name: "Morgenziel Erreichbar"
         unique_id: energy_mgmt_morning_target_reachable
         state: >
-          {% set current_soc = states('sensor.tesla_ladestand') | float(0) %}
+          {% set current_soc = states('sensor.aktives_auto_ladestand') | float(0) %}
           {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
-          {% set hours_until_7am = 12 %}  {# Simplified - should calculate actual time #}
+          {% set hours_until_7am = 12 %}
           {% set hours_needed = states('sensor.geschatzte_ladedauer') | float(0) %}
           {{ hours_until_7am >= hours_needed or current_soc >= target_soc }}
         icon: >

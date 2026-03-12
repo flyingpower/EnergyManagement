@@ -1,5 +1,5 @@
-# Tesla SOC Reliability Enhancement
-# Stores last valid SoC and prevents 0% readings from breaking automations
+# Car SOC Reliability Enhancement
+# Stores last valid SoC for Tesla and Kia to handle network outages / stale data
 
 input_number:
   # Store last valid Tesla SoC (updated when valid reading received)
@@ -13,7 +13,7 @@ input_number:
     icon: mdi:battery-check
 
 automation:
-  # Update stored SoC whenever we get a valid reading (> 0%)
+  # Update stored Tesla SoC whenever we get a valid reading (> 0%)
   - id: tesla_soc_store_valid
     alias: "Tesla - Store Valid SoC"
     description: "Stores last valid Tesla SoC to handle network outages"
@@ -21,7 +21,6 @@ automation:
       - platform: state
         entity_id: sensor.model_3_battery_level
     condition:
-      # Only store if the new value is valid (> 0% and not unavailable/unknown)
       - condition: template
         value_template: >
           {{ trigger.to_state.state not in ['unavailable', 'unknown', 'none'] }}

@@ -15,6 +15,9 @@ views:
               - entity: sensor.aktueller_lademodus
                 name: Aktueller Modus
                 icon: mdi:state-machine
+              - entity: sensor.aktives_auto
+                name: Aktives Auto
+                icon: mdi:car-electric
               - entity: input_select.charging_state
                 name: Systemstatus
               - entity: binary_sensor.auto_angeschlossen
@@ -23,14 +26,35 @@ views:
           - type: horizontal-stack
             cards:
               - type: gauge
-                entity: sensor.tesla_ladestand
-                name: Ladestand
+                entity: sensor.aktives_auto_ladestand
+                name: Aktives Auto SoC
                 min: 0
                 max: 100
                 severity:
                   green: 60
                   yellow: 40
                   red: 20
+              - type: gauge
+                entity: sensor.tesla_ladestand
+                name: Tesla
+                min: 0
+                max: 100
+                severity:
+                  green: 60
+                  yellow: 40
+                  red: 20
+              - type: gauge
+                entity: sensor.kia_ladestand
+                name: Kia EV3
+                min: 0
+                max: 100
+                severity:
+                  green: 60
+                  yellow: 40
+                  red: 20
+
+          - type: horizontal-stack
+            cards:
               - type: gauge
                 entity: sensor.aktueller_strompreis
                 name: Strompreis
@@ -56,6 +80,8 @@ views:
             entities:
               - entity: sensor.tesla_ladestatus
                 name: Tesla Status
+              - entity: sensor.kia_ladestatus
+                name: Kia Status
               - entity: sensor.easee_ladegerat_status
                 name: Ladegerät Status
               - entity: sensor.aktuelle_ladeleistung
@@ -190,32 +216,47 @@ views:
 
               **PV-Prognose (6h):** {{ states('sensor.pv_prognose_nachste_stunden') }} kWh
 
-          - type: markdown
+          - type: custom:html-template-card
             title: Optimaler Ladeplan
+            ignore_line_breaks: true
             content: >
               {% set plan = state_attr('sensor.optimaler_ladeplan', 'charging_plan') %}
               {% set solar_forecast = state_attr('sensor.solar_prognose_stundlich', 'hourly_forecast') %}
               {% if plan is none or plan | length == 0 %}
-              **Keine Daten verfügbar** — Tibber-Preise werden täglich um 13:00 Uhr aktualisiert.
+              <p><b>Keine Daten verfügbar</b> — Tibber-Preise werden täglich um 13:00 Uhr aktualisiert.</p>
               {% else %}
               {% set now_time = now() %}
-
-              | Zeit | Preis | Laden | SoC | PV | Grund |
-              |------|-------|-------|-----|----|-------|
+              {% set now_hour = now_time.replace(minute=0, second=0, microsecond=0) %}
+              <style>
+                .ladeplan { width:100%; border-collapse:collapse; font-size:0.9em; }
+                .ladeplan th { text-align:left; padding:4px 8px; border-bottom:2px solid var(--divider-color); color:var(--secondary-text-color); font-weight:500; }
+                .ladeplan td { padding:4px 8px; border-bottom:1px solid var(--divider-color); }
+                .ladeplan tr.charging { background:rgba(76,175,80,0.12); }
+                .ladeplan tr.current { font-weight:bold; }
+                .ladeplan .price-cheap { color:#4caf50; font-weight:500; }
+                .ladeplan .price-ok { color:#ff9800; }
+                .ladeplan .price-exp { color:#f44336; }
+                .legend { font-size:0.8em; color:var(--secondary-text-color); margin-top:8px; }
+              </style>
+              <table class="ladeplan">
+              <tr><th>Zeit</th><th>Preis</th><th>Laden</th><th>SoC</th><th>PV</th><th>Grund</th></tr>
               {% for hour in plan %}
               {%- set hour_time = hour.datetime | as_datetime %}
-              {%- if hour_time >= now_time.replace(minute=0, second=0, microsecond=0) %}
+              {%- if hour_time >= now_hour %}
               {%- set pv = namespace(v=0) %}
               {%- if solar_forecast is not none and solar_forecast is iterable %}
               {%- for s in solar_forecast %}{%- if s.hour == hour.hour %}{%- set pv.v = s.kw %}{%- endif %}{%- endfor %}
               {%- endif %}
+              {%- set is_current = hour_time == now_hour %}
+              {%- set row_class = ('charging ' if hour.should_charge else '') + ('current' if is_current else '') %}
+              {%- set price_class = 'price-cheap' if hour.price <= states('input_number.price_threshold_80') | float(0.28) else 'price-ok' if hour.price <= states('input_number.price_threshold_50') | float(0.30) else 'price-exp' %}
               {%- set icon = '🟢' if hour.should_charge else '⚪' %}
-              {%- set reason = 'Sehr günstig' if hour.charge_reason == 'price_80' else 'Günstig' if hour.charge_reason == 'price_50' else 'Morgenziel' if hour.charge_reason == 'morning_target' else '-' %}
-              | {{ hour.time }} | {{ hour.price | round(3) }}€ | {{ icon }} | {{ hour.soc_end }}% | {{ pv.v | round(1) }}kW | {{ reason }} |
+              {%- set reason = 'Sehr günstig' if hour.charge_reason == 'price_80' else 'Günstig' if hour.charge_reason == 'price_50' else 'Morgenziel' if hour.charge_reason == 'morning_target' else '' %}
+              <tr class="{{ row_class }}"><td>{{ hour.time }}</td><td class="{{ price_class }}">{{ hour.price | round(3) }}€</td><td>{{ icon }}</td><td>{{ hour.soc_end }}%</td><td>{{ pv.v | round(1) }}kW</td><td>{{ reason }}</td></tr>
               {%- endif %}
               {% endfor %}
-
-              🟢 = Ladung geplant · ⚪ = keine Ladung · Sehr günstig ≤{{ states('input_number.price_threshold_80') }}€ · Günstig ≤{{ states('input_number.price_threshold_50') }}€
+              </table>
+              <div class="legend">🟢 Ladung geplant &nbsp;·&nbsp; ⚪ keine Ladung &nbsp;·&nbsp; <span class="price-cheap">■</span> ≤{{ states('input_number.price_threshold_80') }}€ &nbsp;·&nbsp; <span class="price-ok">■</span> ≤{{ states('input_number.price_threshold_50') }}€ &nbsp;·&nbsp; <span class="price-exp">■</span> teuer</div>
               {% endif %}
 
           - type: entities
@@ -277,7 +318,16 @@ views:
         title: Detaillierter Status
         cards:
           - type: entities
-            title: Tesla
+            title: Aktives Auto
+            entities:
+              - entity: sensor.aktives_auto
+                name: Erkanntes Auto
+                icon: mdi:car-electric
+              - entity: sensor.aktives_auto_ladestand
+                name: SoC (aktiv)
+
+          - type: entities
+            title: Tesla Model 3
             entities:
               - entity: sensor.tesla_ladestand
                 name: Ladestand
@@ -286,6 +336,20 @@ views:
               - entity: sensor.model_3_battery_level
                 name: Batterie (Original)
               - entity: sensor.model_3_charging
+                name: Ladezustand (Original)
+
+          - type: entities
+            title: Kia EV3
+            entities:
+              - entity: sensor.kia_ladestand
+                name: Ladestand
+              - entity: sensor.kia_ladestatus
+                name: Status
+              - entity: sensor.ev3_ev_battery_level
+                name: Batterie (Original)
+              - entity: binary_sensor.ev3_ev_battery_plug
+                name: Stecker (Original)
+              - entity: binary_sensor.ev3_ev_battery_charge
                 name: Ladezustand (Original)
 
           - type: entities
@@ -330,7 +394,7 @@ views:
           content: |
             ## ⚠️ Notladung erforderlich!
 
-            Der Ladestand ist kritisch niedrig ({{ states('sensor.tesla_ladestand') }}%).
+            Der Ladestand ist kritisch niedrig ({{ states('sensor.aktives_auto_ladestand') }}%, {{ states('sensor.aktives_auto') }}).
             Das System hat automatisch die Notladung aktiviert.
 
       - type: conditional
@@ -345,5 +409,6 @@ views:
             Das Fahrzeug wird morgen um {{ states('input_number.morning_target_hour') | int }}:00 Uhr wahrscheinlich nicht
             {{ states('input_number.target_soc_morning') }}% erreichen.
 
-            Aktueller Ladestand: {{ states('sensor.tesla_ladestand') }}%
+            Aktives Auto: {{ states('sensor.aktives_auto') }}
+            Aktueller Ladestand: {{ states('sensor.aktives_auto_ladestand') }}%
             Geschätzte Ladedauer: {{ states('sensor.geschatzte_ladedauer') }} Stunden

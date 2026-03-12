@@ -20,5 +20,5 @@ script:
 
             Aktueller Status:
             - Ladezustand: {{ states('input_select.charging_state') }}
-            - Ladestand: {{ states('sensor.tesla_ladestand') }}%
+            - Ladestand: {{ states('sensor.aktives_auto_ladestand') }}% ({{ states('sensor.aktives_auto') }})
             - Sollte laden: {{ state_attr('sensor.optimaler_ladeplan', 'should_charge_now') }}
