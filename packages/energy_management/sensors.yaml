@@ -186,28 +186,22 @@ template:
       - name: "Kia Ladestatus"
         unique_id: energy_mgmt_kia_charging_status
         state: >
-          {% set status = states('sensor.ev3_ev_battery_charge') %}
-          {% if status in ['charging', 'Charging'] %}
+          {% set charging = is_state('binary_sensor.ev3_ev_battery_charge', 'on') %}
+          {% set plugged = is_state('binary_sensor.ev3_ev_battery_plug', 'on') %}
+          {% if charging %}
             Lädt
-          {% elif status in ['complete', 'Complete', 'plugged_in_fully_charged'] %}
-            Vollständig
-          {% elif status in ['not_charging', 'Not charging', 'plugged_in_not_charging'] %}
-            Gestoppt
-          {% elif status in ['off', 'Off', 'not_plugged_in'] %}
-            Nicht verbunden
+          {% elif plugged %}
+            Verbunden
           {% else %}
-            {{ status }}
+            Nicht verbunden
           {% endif %}
         icon: >
-          {% set status = states('sensor.ev3_ev_battery_charge') %}
-          {% if status in ['charging', 'Charging'] %}
+          {% if is_state('binary_sensor.ev3_ev_battery_charge', 'on') %}
             mdi:battery-charging
-          {% elif status in ['complete', 'Complete'] %}
-            mdi:battery-check
-          {% elif status in ['off', 'Off', 'not_plugged_in'] %}
-            mdi:power-plug-off
+          {% elif is_state('binary_sensor.ev3_ev_battery_plug', 'on') %}
+            mdi:power-plug
           {% else %}
-            mdi:battery
+            mdi:power-plug-off
           {% endif %}
 
       # ============================================================================
@@ -351,7 +345,7 @@ template:
         state: >
           {% set current_soc = states('sensor.aktives_auto_ladestand') | float(0) %}
           {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
-          {% set battery_capacity = 82 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
+          {% set battery_capacity = 58 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
           {% set efficiency_loss = 1.15 %}
           {% if target_soc > current_soc %}
             {{ (((target_soc - current_soc) / 100 * battery_capacity) * efficiency_loss) | round(2) }}

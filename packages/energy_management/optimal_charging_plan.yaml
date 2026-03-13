@@ -38,7 +38,7 @@ template:
             {% set price_charging_on = is_state('input_boolean.enable_price_charging', 'on') %}
             {% set morning_on = is_state('input_boolean.enable_morning_readiness', 'on') %}
             {% set charging_power = 11.04 %}
-            {% set battery_capacity = 82 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
+            {% set battery_capacity = 58 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
             {% set soc_per_hour = (charging_power / battery_capacity * 100) | round(1) %}
             {% set now_time = now() %}
             {% set now_hour = now_time.replace(minute=0, second=0, microsecond=0) %}
@@ -140,7 +140,7 @@ template:
           hours_needed: >
             {% set current_soc = states('sensor.aktives_auto_ladestand') | float(0) %}
             {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
-            {% set battery_capacity = 82 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
+            {% set battery_capacity = 58 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
             {% set soc_per_hour = (11.04 / battery_capacity * 100) %}
             {% set soc_deficit = target_soc - current_soc %}
             {{ [(soc_deficit / soc_per_hour) | round(0, 'ceil') | int, 0] | max }}
@@ -165,7 +165,7 @@ template:
             {% set threshold_50 = states('input_number.price_threshold_50') | float(0.30) %}
             {% set price_charging_on = is_state('input_boolean.enable_price_charging', 'on') %}
             {% set morning_on = is_state('input_boolean.enable_morning_readiness', 'on') %}
-            {% set battery_capacity = 82 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
+            {% set battery_capacity = 58 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
             {% set soc_per_hour = (11.04 / battery_capacity * 100) | round(1) %}
             {% set now_time = now() %}
             {% set current_hour_start = now_time.replace(minute=0, second=0, microsecond=0) %}
@@ -256,7 +256,7 @@ template:
             {% set threshold_50 = states('input_number.price_threshold_50') | float(0.30) %}
             {% set price_charging_on = is_state('input_boolean.enable_price_charging', 'on') %}
             {% set morning_on = is_state('input_boolean.enable_morning_readiness', 'on') %}
-            {% set battery_capacity = 82 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
+            {% set battery_capacity = 58 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
             {% set soc_per_hour = (11.04 / battery_capacity * 100) | round(1) %}
             {% set now_time = now() %}
             {% set now_hour = now_time.replace(minute=0, second=0, microsecond=0) %}
