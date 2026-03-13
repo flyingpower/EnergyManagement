@@ -262,7 +262,7 @@ views:
           - type: entities
             title: Prognose-Status
             entities:
-              - entity: sensor.tesla_ladestand
+              - entity: sensor.aktives_auto_ladestand
                 name: Aktueller Ladestand
               - entity: sensor.aktueller_strompreis
                 name: Aktueller Preis
@@ -289,6 +289,9 @@ views:
             hours_to_show: 24
             entities:
               - entity: sensor.tesla_ladestand
+                name: Tesla
+              - entity: sensor.kia_ladestand
+                name: Kia EV3
           - type: history-graph
             title: Ladeleistung & Netz-Bilanz (24h)
             hours_to_show: 24

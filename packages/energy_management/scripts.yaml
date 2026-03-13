@@ -350,6 +350,13 @@ script:
           threshold_80: "{{ states('input_number.price_threshold_80') | float(0.28) }}"
           current_soc: "{{ states('sensor.aktives_auto_ladestand') | float(0) }}"
           is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
+          # Respect manual overrides; default to 3-phase 16A for grid charging
+          effective_phase: >
+            {% set ov = states('input_select.override_phase_mode') %}
+            {% if ov in ['1_phase', '3_phase'] %}{{ ov }}{% else %}3_phase{% endif %}
+          effective_current: >
+            {% set ov = states('input_number.override_charging_current') | int(0) %}
+            {% if ov >= 6 %}{{ ov }}{% else %}16{% endif %}
 
       - choose:
           # Very cheap - charge to 80%
@@ -359,23 +366,21 @@ script:
               - condition: template
                 value_template: "{{ current_soc < 80 }}"
             sequence:
-              # Only set current when starting charging (not if already charging)
               - choose:
                   - conditions:
                       - condition: template
                         value_template: "{{ not is_charging }}"
                     sequence:
-                      # Force 3-phase mode for grid charging
                       - service: easee.set_charger_phase_mode
                         data:
                           device_id: 4997305f9b10ff58595e095f3bdf74cd
-                          phase_mode: "3_phase"
+                          phase_mode: "{{ effective_phase }}"
                       - delay:
                           seconds: 1
                       - service: easee.set_charger_dynamic_limit
                         data:
                           device_id: 4997305f9b10ff58595e095f3bdf74cd
-                          current: 32
+                          current: "{{ effective_current }}"
                           time_to_live: 0
                       - delay:
                           seconds: 2
@@ -391,23 +396,21 @@ script:
               - condition: template
                 value_template: "{{ current_soc < 50 }}"
             sequence:
-              # Only set current when starting charging (not if already charging)
               - choose:
                   - conditions:
                       - condition: template
                         value_template: "{{ not is_charging }}"
                     sequence:
-                      # Force 3-phase mode for grid charging
                       - service: easee.set_charger_phase_mode
                         data:
                           device_id: 4997305f9b10ff58595e095f3bdf74cd
-                          phase_mode: "3_phase"
+                          phase_mode: "{{ effective_phase }}"
                       - delay:
                           seconds: 1
                       - service: easee.set_charger_dynamic_limit
                         data:
                           device_id: 4997305f9b10ff58595e095f3bdf74cd
-                          current: 32
+                          current: "{{ effective_current }}"
                           time_to_live: 0
                       - delay:
                           seconds: 2
@@ -423,24 +426,28 @@ script:
       - variables:
           target_soc: "{{ states('input_number.target_soc_morning') | int }}"
           is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
+          effective_phase: >
+            {% set ov = states('input_select.override_phase_mode') %}
+            {% if ov in ['1_phase', '3_phase'] %}{{ ov }}{% else %}3_phase{% endif %}
+          effective_current: >
+            {% set ov = states('input_number.override_charging_current') | int(0) %}
+            {% if ov >= 6 %}{{ ov }}{% else %}16{% endif %}
 
-      # Only set current when starting charging (not if already charging)
       - choose:
           - conditions:
               - condition: template
                 value_template: "{{ not is_charging }}"
             sequence:
-              # Force 3-phase mode for fast grid charging
               - service: easee.set_charger_phase_mode
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  phase_mode: "3_phase"
+                  phase_mode: "{{ effective_phase }}"
               - delay:
                   seconds: 1
               - service: easee.set_charger_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: 32
+                  current: "{{ effective_current }}"
                   time_to_live: 0
               - delay:
                   seconds: 2
@@ -464,6 +471,12 @@ script:
           pv_surplus: "{{ states('sensor.verfugbarer_pv_uberschuss') | float(0) }}"
           min_pv: "{{ states('input_number.min_pv_surplus') | float(1400) }}"
           is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
+          effective_phase: >
+            {% set ov = states('input_select.override_phase_mode') %}
+            {% if ov in ['1_phase', '3_phase'] %}{{ ov }}{% else %}3_phase{% endif %}
+          effective_current: >
+            {% set ov = states('input_number.override_charging_current') | int(0) %}
+            {% if ov >= 6 %}{{ ov }}{% else %}16{% endif %}
 
       - choose:
           # Already at target
@@ -480,23 +493,21 @@ script:
             sequence:
               - service: script.adjust_pv_charging_smart
 
-          # Use grid charging — always enforce 3-phase/16A for manual mode
+          # Use grid charging — respects override_phase_mode and override_charging_current
           - conditions:
               - condition: template
                 value_template: "{{ current_soc < target_soc }}"
             sequence:
-              # Always apply phase/current for manual mode (even if already charging,
-              # in case we switched from PV mode which uses 1-phase)
               - service: easee.set_charger_phase_mode
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  phase_mode: "3_phase"
+                  phase_mode: "{{ effective_phase }}"
               - delay:
                   seconds: 1
               - service: easee.set_charger_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: 16
+                  current: "{{ effective_current }}"
                   time_to_live: 0
               - delay:
                   seconds: 2
@@ -520,24 +531,28 @@ script:
     sequence:
       - variables:
           is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
+          effective_phase: >
+            {% set ov = states('input_select.override_phase_mode') %}
+            {% if ov in ['1_phase', '3_phase'] %}{{ ov }}{% else %}3_phase{% endif %}
+          effective_current: >
+            {% set ov = states('input_number.override_charging_current') | int(0) %}
+            {% if ov >= 6 %}{{ ov }}{% else %}16{% endif %}
 
-      # Only set current when starting charging (not if already charging)
       - choose:
           - conditions:
               - condition: template
                 value_template: "{{ not is_charging }}"
             sequence:
-              # Force 3-phase mode for fast emergency charging
               - service: easee.set_charger_phase_mode
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  phase_mode: "3_phase"
+                  phase_mode: "{{ effective_phase }}"
               - delay:
                   seconds: 1
               - service: easee.set_charger_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: 32
+                  current: "{{ effective_current }}"
                   time_to_live: 0
               - delay:
                   seconds: 2

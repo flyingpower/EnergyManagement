@@ -38,9 +38,10 @@ template:
             {% set price_charging_on = is_state('input_boolean.enable_price_charging', 'on') %}
             {% set morning_on = is_state('input_boolean.enable_morning_readiness', 'on') %}
             {% set charging_power = 11.04 %}
-            {% set battery_capacity = 75 %}
+            {% set battery_capacity = 82 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
             {% set soc_per_hour = (charging_power / battery_capacity * 100) | round(1) %}
             {% set now_time = now() %}
+            {% set now_hour = now_time.replace(minute=0, second=0, microsecond=0) %}
             {% set target_hour = states('input_number.morning_target_hour') | int(7) %}
             {% set target_time = now_time.replace(hour=target_hour, minute=0, second=0, microsecond=0) %}
             {% if now_time.hour >= target_hour %}
@@ -50,23 +51,57 @@ template:
             {# Build list of available hours until morning target #}
             {% set avail = namespace(list=[]) %}
             {% for p in prices %}
-              {% if p.time >= now_time.replace(minute=0, second=0, microsecond=0) and p.time < target_time %}
+              {% if p.time >= now_hour and p.time < target_time %}
                 {% set avail.list = avail.list + [p] %}
               {% endif %}
             {% endfor %}
 
             {# Calculate hours needed for morning target (only if morning readiness enabled) #}
-            {% set hours_needed = 0 %}
+            {% set hours_needed_morning = 0 %}
             {% if morning_on %}
               {% set soc_deficit = target_soc - current_soc %}
-              {% set hours_needed = (soc_deficit / soc_per_hour) | round(0, 'ceil') | int %}
-              {% set hours_needed = [hours_needed, 0] | max %}
-              {% set hours_needed = [hours_needed, avail.list | length] | min %}
+              {% set hours_needed_morning = (soc_deficit / soc_per_hour) | round(0, 'ceil') | int %}
+              {% set hours_needed_morning = [hours_needed_morning, 0] | max %}
+              {% set hours_needed_morning = [hours_needed_morning, avail.list | length] | min %}
             {% endif %}
 
-            {# Select cheapest N hours by datetime string key #}
-            {% set sorted_hours = avail.list | sort(attribute='price') %}
-            {% set selected_datetimes = sorted_hours[:hours_needed] | map(attribute='time') | map('string') | list %}
+            {# Select cheapest N hours for morning target #}
+            {% set sorted_morning = avail.list | sort(attribute='price') %}
+            {% set morning_datetimes = sorted_morning[:hours_needed_morning] | map(attribute='time') | map('string') | list %}
+
+            {# For opportunistic price charging: pick cheapest hours needed to reach 80% / 50% #}
+            {# price_80: how many hours to go from current_soc to 80% #}
+            {% set hours_needed_80 = 0 %}
+            {% set hours_needed_50 = 0 %}
+            {% if price_charging_on %}
+              {% if current_soc < 80 %}
+                {% set deficit_80 = 80 - current_soc %}
+                {% set hours_needed_80 = (deficit_80 / soc_per_hour) | round(0, 'ceil') | int %}
+              {% endif %}
+              {% if current_soc < 50 %}
+                {% set deficit_50 = 50 - current_soc %}
+                {% set hours_needed_50 = (deficit_50 / soc_per_hour) | round(0, 'ceil') | int %}
+              {% endif %}
+            {% endif %}
+
+            {# Candidate hours for opportunistic charging: all future hours meeting price criteria #}
+            {# Sort by price and pick cheapest N needed #}
+            {% set cand_80 = namespace(list=[]) %}
+            {% set cand_50 = namespace(list=[]) %}
+            {% for p in prices %}
+              {% if p.time >= now_hour %}
+                {% if price_charging_on and p.price <= threshold_80 %}
+                  {% set cand_80.list = cand_80.list + [p] %}
+                {% endif %}
+                {% if price_charging_on and p.price <= threshold_50 %}
+                  {% set cand_50.list = cand_50.list + [p] %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {% set sorted_80 = cand_80.list | sort(attribute='price') %}
+            {% set sorted_50 = cand_50.list | sort(attribute='price') %}
+            {% set price_80_datetimes = sorted_80[:hours_needed_80] | map(attribute='time') | map('string') | list %}
+            {% set price_50_datetimes = sorted_50[:hours_needed_50] | map(attribute='time') | map('string') | list %}
 
             {# Build plan #}
             {% set plan = namespace(list=[]) %}
@@ -75,14 +110,14 @@ template:
               {% set price_time = p.time %}
               {% set should_charge = false %}
               {% set charge_reason = 'none' %}
-              {% if price_time >= now_time.replace(minute=0, second=0, microsecond=0) %}
-                {% if price_charging_on and p.price <= threshold_80 and soc.value | round(0) < 80 %}
+              {% if price_time >= now_hour %}
+                {% if price_charging_on and price_time | string in price_80_datetimes and soc.value | round(0) < 80 %}
                   {% set should_charge = true %}
                   {% set charge_reason = 'price_80' %}
-                {% elif price_charging_on and p.price <= threshold_50 and soc.value | round(0) < 50 %}
+                {% elif price_charging_on and price_time | string in price_50_datetimes and soc.value | round(0) < 50 %}
                   {% set should_charge = true %}
                   {% set charge_reason = 'price_50' %}
-                {% elif morning_on and price_time | string in selected_datetimes and price_time < target_time and soc.value | round(0) < target_soc %}
+                {% elif morning_on and price_time | string in morning_datetimes and price_time < target_time and soc.value | round(0) < target_soc %}
                   {% set should_charge = true %}
                   {% set charge_reason = 'morning_target' %}
                 {% endif %}
@@ -105,7 +140,8 @@ template:
           hours_needed: >
             {% set current_soc = states('sensor.aktives_auto_ladestand') | float(0) %}
             {% set target_soc = states('input_number.target_soc_morning') | float(80) %}
-            {% set soc_per_hour = (11.04 / 75 * 100) %}
+            {% set battery_capacity = 82 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
+            {% set soc_per_hour = (11.04 / battery_capacity * 100) %}
             {% set soc_deficit = target_soc - current_soc %}
             {{ [(soc_deficit / soc_per_hour) | round(0, 'ceil') | int, 0] | max }}
 
@@ -129,7 +165,8 @@ template:
             {% set threshold_50 = states('input_number.price_threshold_50') | float(0.30) %}
             {% set price_charging_on = is_state('input_boolean.enable_price_charging', 'on') %}
             {% set morning_on = is_state('input_boolean.enable_morning_readiness', 'on') %}
-            {% set soc_per_hour = (11.04 / 75 * 100) | round(1) %}
+            {% set battery_capacity = 82 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
+            {% set soc_per_hour = (11.04 / battery_capacity * 100) | round(1) %}
             {% set now_time = now() %}
             {% set current_hour_start = now_time.replace(minute=0, second=0, microsecond=0) %}
             {% set target_hour = states('input_number.morning_target_hour') | int(7) %}
@@ -149,19 +186,43 @@ template:
               {% set hours_needed = [(soc_deficit / soc_per_hour) | round(0, 'ceil') | int, 0] | max %}
               {% set hours_needed = [hours_needed, avail.list | length] | min %}
             {% endif %}
-            {% set sorted_hours = avail.list | sort(attribute='price') %}
-            {% set selected_datetimes = sorted_hours[:hours_needed] | map(attribute='time') | map('string') | list %}
+            {% set sorted_morning = avail.list | sort(attribute='price') %}
+            {% set morning_datetimes = sorted_morning[:hours_needed] | map(attribute='time') | map('string') | list %}
+            {% set hours_needed_80 = 0 %}
+            {% set hours_needed_50 = 0 %}
+            {% if price_charging_on %}
+              {% if current_soc < 80 %}
+                {% set hours_needed_80 = ((80 - current_soc) / soc_per_hour) | round(0, 'ceil') | int %}
+              {% endif %}
+              {% if current_soc < 50 %}
+                {% set hours_needed_50 = ((50 - current_soc) / soc_per_hour) | round(0, 'ceil') | int %}
+              {% endif %}
+            {% endif %}
+            {% set cand_80 = namespace(list=[]) %}
+            {% set cand_50 = namespace(list=[]) %}
+            {% for p in prices %}
+              {% if p.time >= current_hour_start %}
+                {% if price_charging_on and p.price <= threshold_80 %}
+                  {% set cand_80.list = cand_80.list + [p] %}
+                {% endif %}
+                {% if price_charging_on and p.price <= threshold_50 %}
+                  {% set cand_50.list = cand_50.list + [p] %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {% set price_80_datetimes = (cand_80.list | sort(attribute='price'))[:hours_needed_80] | map(attribute='time') | map('string') | list %}
+            {% set price_50_datetimes = (cand_50.list | sort(attribute='price'))[:hours_needed_50] | map(attribute='time') | map('string') | list %}
             {% set soc = namespace(value=current_soc) %}
             {% set result = namespace(value=false) %}
             {% for p in prices %}
               {% set price_time = p.time %}
               {% set should_charge = false %}
               {% if price_time >= current_hour_start %}
-                {% if price_charging_on and p.price <= threshold_80 and soc.value | round(0) < 80 %}
+                {% if price_charging_on and price_time | string in price_80_datetimes and soc.value | round(0) < 80 %}
                   {% set should_charge = true %}
-                {% elif price_charging_on and p.price <= threshold_50 and soc.value | round(0) < 50 %}
+                {% elif price_charging_on and price_time | string in price_50_datetimes and soc.value | round(0) < 50 %}
                   {% set should_charge = true %}
-                {% elif morning_on and price_time | string in selected_datetimes and price_time < target_time and soc.value | round(0) < target_soc %}
+                {% elif morning_on and price_time | string in morning_datetimes and price_time < target_time and soc.value | round(0) < target_soc %}
                   {% set should_charge = true %}
                 {% endif %}
                 {% if should_charge %}
@@ -195,8 +256,10 @@ template:
             {% set threshold_50 = states('input_number.price_threshold_50') | float(0.30) %}
             {% set price_charging_on = is_state('input_boolean.enable_price_charging', 'on') %}
             {% set morning_on = is_state('input_boolean.enable_morning_readiness', 'on') %}
-            {% set soc_per_hour = (11.04 / 75 * 100) | round(1) %}
+            {% set battery_capacity = 82 if states('sensor.aktives_auto') == 'Kia EV3' else 75 %}
+            {% set soc_per_hour = (11.04 / battery_capacity * 100) | round(1) %}
             {% set now_time = now() %}
+            {% set now_hour = now_time.replace(minute=0, second=0, microsecond=0) %}
             {% set target_hour = states('input_number.morning_target_hour') | int(7) %}
             {% set target_time = now_time.replace(hour=target_hour, minute=0, second=0, microsecond=0) %}
             {% if now_time.hour >= target_hour %}
@@ -204,7 +267,7 @@ template:
             {% endif %}
             {% set avail = namespace(list=[]) %}
             {% for p in prices %}
-              {% if p.time >= now_time.replace(minute=0, second=0, microsecond=0) and p.time < target_time %}
+              {% if p.time >= now_hour and p.time < target_time %}
                 {% set avail.list = avail.list + [p] %}
               {% endif %}
             {% endfor %}
@@ -214,19 +277,42 @@ template:
               {% set hours_needed = [(soc_deficit / soc_per_hour) | round(0, 'ceil') | int, 0] | max %}
               {% set hours_needed = [hours_needed, avail.list | length] | min %}
             {% endif %}
-            {% set sorted_hours = avail.list | sort(attribute='price') %}
-            {% set selected_datetimes = sorted_hours[:hours_needed] | map(attribute='time') | map('string') | list %}
+            {% set morning_datetimes = (avail.list | sort(attribute='price'))[:hours_needed] | map(attribute='time') | map('string') | list %}
+            {% set hours_needed_80 = 0 %}
+            {% set hours_needed_50 = 0 %}
+            {% if price_charging_on %}
+              {% if current_soc < 80 %}
+                {% set hours_needed_80 = ((80 - current_soc) / soc_per_hour) | round(0, 'ceil') | int %}
+              {% endif %}
+              {% if current_soc < 50 %}
+                {% set hours_needed_50 = ((50 - current_soc) / soc_per_hour) | round(0, 'ceil') | int %}
+              {% endif %}
+            {% endif %}
+            {% set cand_80 = namespace(list=[]) %}
+            {% set cand_50 = namespace(list=[]) %}
+            {% for p in prices %}
+              {% if p.time >= now_hour %}
+                {% if price_charging_on and p.price <= threshold_80 %}
+                  {% set cand_80.list = cand_80.list + [p] %}
+                {% endif %}
+                {% if price_charging_on and p.price <= threshold_50 %}
+                  {% set cand_50.list = cand_50.list + [p] %}
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+            {% set price_80_datetimes = (cand_80.list | sort(attribute='price'))[:hours_needed_80] | map(attribute='time') | map('string') | list %}
+            {% set price_50_datetimes = (cand_50.list | sort(attribute='price'))[:hours_needed_50] | map(attribute='time') | map('string') | list %}
             {% set soc = namespace(value=current_soc) %}
             {% set result = namespace(value='') %}
             {% for p in prices %}
               {% set price_time = p.time %}
               {% set should_charge = false %}
-              {% if price_time >= now_time.replace(minute=0, second=0, microsecond=0) %}
-                {% if price_charging_on and p.price <= threshold_80 and soc.value | round(0) < 80 %}
+              {% if price_time >= now_hour %}
+                {% if price_charging_on and price_time | string in price_80_datetimes and soc.value | round(0) < 80 %}
                   {% set should_charge = true %}
-                {% elif price_charging_on and p.price <= threshold_50 and soc.value | round(0) < 50 %}
+                {% elif price_charging_on and price_time | string in price_50_datetimes and soc.value | round(0) < 50 %}
                   {% set should_charge = true %}
-                {% elif morning_on and price_time | string in selected_datetimes and price_time < target_time and soc.value | round(0) < target_soc %}
+                {% elif morning_on and price_time | string in morning_datetimes and price_time < target_time and soc.value | round(0) < target_soc %}
                   {% set should_charge = true %}
                 {% endif %}
                 {% if should_charge %}

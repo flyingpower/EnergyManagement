@@ -39,6 +39,12 @@ automation:
           should_charge: "{{ state_attr('sensor.optimaler_ladeplan', 'should_charge_now') | default(false) }}"
           is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
           current_soc: "{{ states('sensor.aktives_auto_ladestand') | float(0) }}"
+          effective_phase: >
+            {% set ov = states('input_select.override_phase_mode') %}
+            {% if ov in ['1_phase', '3_phase'] %}{{ ov }}{% else %}3_phase{% endif %}
+          effective_current: >
+            {% set ov = states('input_number.override_charging_current') | int(0) %}
+            {% if ov >= 6 %}{{ ov }}{% else %}16{% endif %}
 
       # Log decision info
       - service: system_log.write
@@ -64,18 +70,16 @@ automation:
                   entity_id: input_select.charging_state
                 data:
                   option: "price"
-              # Force 3-phase mode for grid charging
               - service: easee.set_charger_phase_mode
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  phase_mode: "3_phase"
+                  phase_mode: "{{ effective_phase }}"
               - delay:
                   seconds: 1
-              # Set charging current to 16A (3-phase)
               - service: easee.set_charger_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: 16
+                  current: "{{ effective_current }}"
                   time_to_live: 0
               - delay:
                   seconds: 2
