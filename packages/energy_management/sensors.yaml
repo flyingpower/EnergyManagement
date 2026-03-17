@@ -80,20 +80,21 @@ template:
       # TESLA SENSORS
       # ============================================================================
 
-      # Tesla SOC (with fallback to last valid value)
+      # Tesla SOC — sourced from Tibber (sensor.model_3_state_of_charge)
+      # Tesla integration is currently broken; Tibber provides SoC via car integration
       - name: "Tesla Ladestand"
         unique_id: energy_mgmt_tesla_soc
         unit_of_measurement: "%"
         device_class: battery
         state: >
-          {% set current = states('sensor.model_3_battery_level') %}
+          {% set current = states('sensor.model_3_state_of_charge') %}
           {% if current in ['unavailable', 'unknown', 'none'] or current | float(0) <= 0 %}
             {{ states('input_number.tesla_soc_last_valid') | float(50) | round(0) }}
           {% else %}
             {{ current | float(0) | round(0) }}
           {% endif %}
         icon: >
-          {% set current = states('sensor.model_3_battery_level') %}
+          {% set current = states('sensor.model_3_state_of_charge') %}
           {% if current in ['unavailable', 'unknown', 'none'] or current | float(0) <= 0 %}
             mdi:battery-alert
           {% else %}
@@ -101,14 +102,14 @@ template:
           {% endif %}
         attributes:
           source: >
-            {% set current = states('sensor.model_3_battery_level') %}
+            {% set current = states('sensor.model_3_state_of_charge') %}
             {% if current in ['unavailable', 'unknown', 'none'] or current | float(0) <= 0 %}
               last_valid
             {% else %}
               live
             {% endif %}
           last_valid_soc: "{{ states('input_number.tesla_soc_last_valid') | float(0) | round(0) }}"
-          raw_soc: "{{ states('sensor.model_3_battery_level') }}"
+          raw_soc: "{{ states('sensor.model_3_state_of_charge') }}"
 
       # Tesla Charging Status
       - name: "Tesla Ladestatus"

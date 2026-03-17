@@ -19,7 +19,7 @@ automation:
     description: "Stores last valid Tesla SoC to handle network outages"
     trigger:
       - platform: state
-        entity_id: sensor.model_3_battery_level
+        entity_id: sensor.model_3_state_of_charge
     condition:
       - condition: template
         value_template: >
@@ -43,10 +43,10 @@ automation:
   # Alert when Tesla connection is lost for extended period
   - id: tesla_soc_connection_lost
     alias: "Tesla - Connection Lost Alert"
-    description: "Alerts when Tesla SoC is unavailable for more than 15 minutes"
+    description: "Alerts when Tesla SoC (Tibber) is unavailable for more than 15 minutes"
     trigger:
       - platform: state
-        entity_id: sensor.model_3_battery_level
+        entity_id: sensor.model_3_state_of_charge
         to:
           - unavailable
           - unknown

@@ -380,7 +380,7 @@ automation:
     trigger:
       - platform: state
         entity_id:
-          - sensor.model_3_battery_level
+          - sensor.model_3_state_of_charge
           - sensor.tibber_electricity_price
           - sensor.garage_status
         to: "unavailable"
@@ -393,3 +393,43 @@ automation:
           message: >
             {{ trigger.to_state.attributes.friendly_name }} ist seit 10 Minuten nicht verfügbar.
             Energie-Management könnte beeinträchtigt sein.
+
+  # ============================================================================
+  # TIBBER REALTIME POWER WATCHDOG
+  # Tibber's realtime WebSocket stream occasionally freezes (sensors go stale).
+  # When tibber_power has not changed for 15 minutes during daytime, reload
+  # the Tibber integration to force a reconnect.
+  # ============================================================================
+  - id: tibber_realtime_watchdog
+    alias: "Tibber - Realtime Power Watchdog"
+    description: "Reloads Tibber integration when realtime power sensors freeze"
+    trigger:
+      - platform: state
+        entity_id: sensor.tibber_power
+        to:
+        for:
+          minutes: 15
+    condition:
+      # Only act during hours when realtime data matters (6:00–23:00)
+      - condition: time
+        after: "06:00:00"
+        before: "23:00:00"
+    action:
+      - service: system_log.write
+        data:
+          message: >
+            Tibber realtime power sensor frozen for 15 min (state: {{ states('sensor.tibber_power') }}).
+            Reloading Tibber integration.
+          level: warning
+      - service: homeassistant.reload_config_entry
+        target:
+          entity_id: sensor.tibber_power
+      - delay:
+          seconds: 10
+      - service: notify.mobile_app
+        data:
+          title: "⚠️ Tibber Echtzeit-Daten eingefroren"
+          message: >
+            Tibber Leistungssensor war 15 Min. eingefroren.
+            Integration wurde automatisch neu geladen.
+    mode: single
