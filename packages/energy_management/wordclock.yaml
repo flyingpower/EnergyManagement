@@ -1,0 +1,81 @@
+# ESP Wordclock Integration
+# Communicates with the ESP Wordclock via MQTT using the JSON Light Schema.
+# The device auto-registers in HA via MQTT discovery on startup.
+#
+# MQTT base topic: ESPWordclock  (configured in the Wordclock web UI)
+#   Command topic:      ESPWordclock/cmd
+#   Status topic:       ESPWordclock/status
+#   Availability topic: ESPWordclock/availability
+#
+# Effects: Wordclock | Seconds | Digitalclock | Scrollingtext |
+#          Rainbowcycle | Rainbow | Color | Symbol
+#
+# After the device boots, trigger MQTT Discovery from its web UI once.
+# HA will then create a "light" entity named after the device automatically.
+#
+# The scripts below provide easy-to-call actions for common use cases.
+
+script:
+  wordclock_set_effect:
+    alias: "Wordclock - Effekt setzen"
+    description: "Setzt den Anzeigeeffekt der Wordclock (Wordclock/Seconds/Digitalclock/Scrollingtext/Rainbowcycle/Rainbow/Color/Symbol)"
+    fields:
+      effect:
+        description: "Effektname"
+        example: "Wordclock"
+    sequence:
+      - service: mqtt.publish
+        data:
+          topic: "ESPWordclock/cmd"
+          payload: >
+            {"effect": "{{ effect }}"}
+
+  wordclock_scrolling_text:
+    alias: "Wordclock - Lauftext anzeigen"
+    description: "Zeigt einen Lauftext auf der Wordclock an"
+    fields:
+      text:
+        description: "Anzuzeigender Text"
+        example: "Hallo Welt!"
+    sequence:
+      - service: mqtt.publish
+        data:
+          topic: "ESPWordclock/cmd"
+          payload: >
+            {"effect": "Scrollingtext", "scrolling_text": "{{ text }}"}
+
+  wordclock_set_color:
+    alias: "Wordclock - Farbe setzen"
+    description: "Setzt Farbe (Hue 0-360, Saturation 0-100) und Helligkeit (0-255)"
+    fields:
+      hue:
+        description: "Farbton (0–360)"
+        example: 120
+      saturation:
+        description: "Sättigung (0–100)"
+        example: 100
+      brightness:
+        description: "Helligkeit (0–255)"
+        example: 128
+    sequence:
+      - service: mqtt.publish
+        data:
+          topic: "ESPWordclock/cmd"
+          payload: >
+            {"state": "ON", "brightness": {{ brightness | int(128) }}, "color": {"h": {{ hue | int(0) }}, "s": {{ saturation | int(100) }}}}
+
+  wordclock_turn_off:
+    alias: "Wordclock - Ausschalten"
+    sequence:
+      - service: mqtt.publish
+        data:
+          topic: "ESPWordclock/cmd"
+          payload: '{"state": "OFF"}'
+
+  wordclock_turn_on:
+    alias: "Wordclock - Einschalten"
+    sequence:
+      - service: mqtt.publish
+        data:
+          topic: "ESPWordclock/cmd"
+          payload: '{"state": "ON"}'
