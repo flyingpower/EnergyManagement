@@ -49,11 +49,11 @@ script:
                   phase_mode: "1_phase"
               - delay:
                   seconds: 2
-              - service: easee.set_charger_dynamic_limit
+              - service: easee.set_circuit_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: "{{ calculated_current }}"
-                  time_to_live: 0
+                  current_p1: "{{ calculated_current }}"
+
               - delay:
                   seconds: 2
               - service: easee.action_command
@@ -84,11 +84,11 @@ script:
                   level: debug
 
               # Adjust charging current (1-phase mode already set)
-              - service: easee.set_charger_dynamic_limit
+              - service: easee.set_circuit_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: "{{ calculated_current }}"
-                  time_to_live: 0
+                  current_p1: "{{ calculated_current }}"
+
 
           # ========== CASE 3: Stop Charging (Below stop threshold OR current too low) ==========
           - conditions:
@@ -123,7 +123,15 @@ script:
           raw_target: "{{ states('sensor.pv_target_charging_current') | int(0) }}"
           net_consumption: "{{ states('sensor.net_grid_consumption') | float(0) }}"
           is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
-          current_charging_amps: "{{ states('sensor.garage_dynamic_charger_limit') | int(6) }}"
+          current_charging_amps: >
+            {# garage_dynamic_charger_limit does not exist for this charger.
+               Derive actual current from garage_power (kW) / 230V instead. #}
+            {% set power_w = states('sensor.garage_power') | float(0) * 1000 %}
+            {% if power_w > 100 %}
+              {{ (power_w / 230) | round(0) | int }}
+            {% else %}
+              6
+            {% endif %}
           start_timer: "{{ states('input_number.pv_start_condition_timer') | int(0) }}"
           stop_timer: "{{ states('input_number.pv_stop_condition_timer') | int(0) }}"
           # Check if tibber_power is stale (last changed > 90s ago — it polls every 30s)
@@ -252,11 +260,11 @@ script:
                   phase_mode: "{{ effective_phase }}"
               - delay:
                   seconds: 2
-              - service: easee.set_charger_dynamic_limit
+              - service: easee.set_circuit_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: "{{ effective_current }}"
-                  time_to_live: 0
+                  current_p1: "{{ effective_current }}"
+
               - delay:
                   seconds: 2
               - service: easee.action_command
@@ -297,11 +305,11 @@ script:
                   message: "PV Smart: Adjusting from {{ current_charging_amps }}A to {{ effective_current }}A (net: {{ net_consumption }}W)"
                   level: debug
 
-              - service: easee.set_charger_dynamic_limit
+              - service: easee.set_circuit_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: "{{ effective_current }}"
-                  time_to_live: 0
+                  current_p1: "{{ effective_current }}"
+
 
           # CASE 3: Stop Charging (timer >= 300 seconds = 5 minutes at minimum current)
           - conditions:
@@ -396,11 +404,11 @@ script:
                           phase_mode: "{{ effective_phase }}"
                       - delay:
                           seconds: 1
-                      - service: easee.set_charger_dynamic_limit
+                      - service: easee.set_circuit_dynamic_limit
                         data:
                           device_id: 4997305f9b10ff58595e095f3bdf74cd
-                          current: "{{ effective_current }}"
-                          time_to_live: 0
+                          current_p1: "{{ effective_current }}"
+        
                       - delay:
                           seconds: 2
                       - service: easee.action_command
@@ -426,11 +434,11 @@ script:
                           phase_mode: "{{ effective_phase }}"
                       - delay:
                           seconds: 1
-                      - service: easee.set_charger_dynamic_limit
+                      - service: easee.set_circuit_dynamic_limit
                         data:
                           device_id: 4997305f9b10ff58595e095f3bdf74cd
-                          current: "{{ effective_current }}"
-                          time_to_live: 0
+                          current_p1: "{{ effective_current }}"
+        
                       - delay:
                           seconds: 2
                       - service: easee.action_command
@@ -463,11 +471,11 @@ script:
                   phase_mode: "{{ effective_phase }}"
               - delay:
                   seconds: 1
-              - service: easee.set_charger_dynamic_limit
+              - service: easee.set_circuit_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: "{{ effective_current }}"
-                  time_to_live: 0
+                  current_p1: "{{ effective_current }}"
+
               - delay:
                   seconds: 2
               - service: easee.action_command
@@ -523,11 +531,11 @@ script:
                   phase_mode: "{{ effective_phase }}"
               - delay:
                   seconds: 1
-              - service: easee.set_charger_dynamic_limit
+              - service: easee.set_circuit_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: "{{ effective_current }}"
-                  time_to_live: 0
+                  current_p1: "{{ effective_current }}"
+
               - delay:
                   seconds: 2
               - choose:
@@ -568,11 +576,11 @@ script:
                   phase_mode: "{{ effective_phase }}"
               - delay:
                   seconds: 1
-              - service: easee.set_charger_dynamic_limit
+              - service: easee.set_circuit_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current: "{{ effective_current }}"
-                  time_to_live: 0
+                  current_p1: "{{ effective_current }}"
+
               - delay:
                   seconds: 2
               - service: easee.action_command
