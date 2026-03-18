@@ -177,9 +177,9 @@ views:
             title: Preisschwellen
             entities:
               - entity: input_number.price_threshold_80
-                name: Schwelle für 80% Ladung
+                name: Schwelle für 100% Ladung (Sehr günstig)
               - entity: input_number.price_threshold_50
-                name: Schwelle für 50% Ladung
+                name: Schwelle für 60% Ladung (Günstig)
               - entity: sensor.aktueller_strompreis
                 name: Aktueller Preis
 

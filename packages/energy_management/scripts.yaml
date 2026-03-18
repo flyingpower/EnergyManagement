@@ -395,7 +395,7 @@ script:
               - condition: template
                 value_template: "{{ current_price <= threshold_80 }}"
               - condition: template
-                value_template: "{{ current_soc < 80 }}"
+                value_template: "{{ current_soc < 100 }}"
             sequence:
               - choose:
                   - conditions:
@@ -425,7 +425,7 @@ script:
               - condition: template
                 value_template: "{{ current_price <= threshold_50 }}"
               - condition: template
-                value_template: "{{ current_soc < 50 }}"
+                value_template: "{{ current_soc < 60 }}"
             sequence:
               - choose:
                   - conditions:
