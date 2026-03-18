@@ -62,14 +62,18 @@ automation:
                 value_template: >
                   {% set surplus = states('sensor.verfugbarer_pv_uberschuss') | float(0) %}
                   {% set min_surplus = states('input_number.min_pv_surplus') | float(1400) %}
-                  {{ surplus >= min_surplus }}
+                  {% set already_pv = is_state('input_select.charging_state', 'pv') %}
+                  {% set is_charging = is_state('sensor.garage_status', 'charging') %}
+                  {# Stay in PV mode once started (timers in smart script handle stopping).
+                     Only require surplus >= min_surplus to enter from idle. #}
+                  {{ surplus >= min_surplus or (already_pv and is_charging) }}
             sequence:
               - service: input_select.select_option
                 target:
                   entity_id: input_select.charging_state
                 data:
                   option: "pv"
-              - service: script.adjust_pv_charging
+              - service: script.adjust_pv_charging_smart
 
           # Priority 4: Price-Based Charging (during scheduled hours)
           - conditions:
