@@ -76,10 +76,11 @@ automation:
                   phase_mode: "{{ effective_phase }}"
               - delay:
                   seconds: 1
-              - service: easee.set_circuit_dynamic_limit
+              - service: easee.set_charger_dynamic_limit
                 data:
                   device_id: 4997305f9b10ff58595e095f3bdf74cd
-                  current_p1: "{{ effective_current }}"
+                  current: "{{ effective_current }}"
+                  time_to_live: 0
               - delay:
                   seconds: 2
               - service: easee.action_command
