@@ -120,14 +120,16 @@ script:
           surplus: "{{ states('sensor.verfugbarer_pv_uberschuss') | float(0) }}"
           min_surplus: "{{ states('input_number.min_pv_surplus') | float(1400) }}"
           buffer: "{{ states('input_number.pv_charging_buffer') | float(200) }}"
-          target_current: "{{ states('sensor.pv_target_charging_current') | int(0) }}"
+          raw_target: "{{ states('sensor.pv_target_charging_current') | int(0) }}"
           net_consumption: "{{ states('sensor.net_grid_consumption') | float(0) }}"
           is_charging: "{{ is_state('sensor.garage_status', 'charging') }}"
-          current_charging_amps: "{{ states('sensor.garage_dynamic_charger_limit') | int(0) }}"
+          current_charging_amps: "{{ states('sensor.garage_dynamic_charger_limit') | int(6) }}"
           start_timer: "{{ states('input_number.pv_start_condition_timer') | int(0) }}"
           stop_timer: "{{ states('input_number.pv_stop_condition_timer') | int(0) }}"
-          phase_override: "{{ states('input_select.override_phase_mode') }}"
-          current_override: "{{ states('input_number.override_charging_current') | int(0) }}"
+          # Check if tibber_power is stale (last changed > 90s ago — it polls every 30s)
+          tibber_power_stale: >
+            {% set last = states.sensor.tibber_power.last_changed if states.sensor.tibber_power is defined else none %}
+            {{ last is none or (now() - last).total_seconds() > 90 }}
           # Resolve effective phase mode: override wins, else 1_phase for PV
           effective_phase: >
             {% if states('input_select.override_phase_mode') in ['1_phase', '3_phase'] %}
@@ -135,13 +137,28 @@ script:
             {% else %}
               1_phase
             {% endif %}
-          # Resolve effective current: current_override wins if >= 6, else calculated
+          # Resolve effective current with ±2A stepping to avoid overshoot.
+          # If tibber_power is stale, hold current — don't adjust blindly.
           effective_current: >
             {% set ov = states('input_number.override_charging_current') | int(0) %}
             {% if ov >= 6 %}
               {{ ov }}
             {% else %}
-              {{ states('sensor.pv_target_charging_current') | int(0) }}
+              {% set last = states.sensor.tibber_power.last_changed if states.sensor.tibber_power is defined else none %}
+              {% set stale = last is none or (now() - last).total_seconds() > 90 %}
+              {% if stale %}
+                {{ current_charging_amps }}
+              {% else %}
+                {% set t = states('sensor.pv_target_charging_current') | int(0) %}
+                {% set base = current_charging_amps | int(6) %}
+                {% if t > base + 2 %}
+                  {{ base + 2 }}
+                {% elif t < base - 2 %}
+                  {{ base - 2 }}
+                {% else %}
+                  {{ t }}
+                {% endif %}
+              {% endif %}
             {% endif %}
 
       # ========== Update Start Timer ==========
@@ -208,9 +225,9 @@ script:
       - service: system_log.write
         data:
           message: >
-            PV Smart: surplus={{ surplus }}W, target_current={{ target_current }}A,
-            net={{ net_consumption }}W, is_charging={{ is_charging }},
-            start_timer={{ start_timer }}s, stop_timer={{ stop_timer }}s
+            PV Smart: surplus={{ surplus }}W, target={{ raw_target }}A, effective={{ effective_current }}A,
+            net={{ net_consumption }}W, is_charging={{ is_charging }}, amps={{ current_charging_amps }}A,
+            start_timer={{ start_timer }}s, stop_timer={{ stop_timer }}s, tibber_stale={{ tibber_power_stale }}
           level: debug
 
       # ========== Execute Charging Logic ==========

@@ -31,35 +31,18 @@ template:
           {% set consumption = states('sensor.tibber_power') | float(0) %}
           {% set production = states('sensor.tibber_power_production') | float(0) %}
           {% set buffer = states('input_number.pv_charging_buffer') | float(200) %}
-          {# garage_power is in kW — convert to W #}
           {% set current_charging_w = states('sensor.garage_power') | float(0) * 1000 %}
-          {% set current_limit = states('sensor.garage_dynamic_charger_limit') | int(6) %}
 
-          {# Check for current override — if set, use that directly #}
           {% set override = states('input_number.override_charging_current') | int(0) %}
           {% if override >= 6 %}
             {{ override }}
           {% else %}
-            {# net = grid import - grid export (negative = exporting) #}
+            {# net = grid import - grid export (negative means exporting) #}
             {% set net = consumption - production %}
-            {# Available power for charger = current charger draw + current export - buffer #}
+            {# Available W for charger = charger draw + export surplus - buffer #}
             {% set available_for_charger = current_charging_w - net - buffer %}
-
-            {# Convert to amps: 1-phase 230V #}
             {% set target_current = (available_for_charger / 230) | round(0) | int %}
-
-            {# Clamp to 6–32A #}
-            {% set target_current = [[target_current, 6] | max, 32] | min %}
-
-            {# Step toward target by max 2A per cycle to avoid overshoot due to
-               Tibber's 30s polling lag. This gives smoother convergence. #}
-            {% if target_current > current_limit + 2 %}
-              {{ current_limit + 2 }}
-            {% elif target_current < current_limit - 2 %}
-              {{ current_limit - 2 }}
-            {% else %}
-              {{ target_current }}
-            {% endif %}
+            {{ [[target_current, 6] | max, 32] | min }}
           {% endif %}
 
       # Net grid consumption (positive = importing, negative = exporting)

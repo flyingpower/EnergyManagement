@@ -403,40 +403,42 @@ automation:
 
   # ============================================================================
   # TIBBER REALTIME POWER WATCHDOG
-  # Tibber's realtime WebSocket stream occasionally freezes (sensors go stale).
-  # When tibber_power has not changed for 15 minutes during daytime, reload
-  # the Tibber integration to force a reconnect.
+  # tibber_power flickers unavailable→0→unavailable→0 when the stream freezes,
+  # so a state-based trigger never fires. Use a time-pattern check instead:
+  # every 5 minutes, check if tibber_power last_changed > 90s ago.
   # ============================================================================
   - id: tibber_realtime_watchdog
     alias: "Tibber - Realtime Power Watchdog"
-    description: "Reloads Tibber integration when realtime power sensors freeze"
+    description: "Reloads Tibber integration when realtime power sensor is stale"
     trigger:
-      - platform: state
-        entity_id: sensor.tibber_power
-        to:
-        for:
-          minutes: 15
+      - platform: time_pattern
+        minutes: "/5"
     condition:
-      # Only act during hours when realtime data matters (6:00–23:00)
       - condition: time
         after: "06:00:00"
         before: "23:00:00"
+      - condition: template
+        # tibber_power should update every ~30s; stale if unchanged for 90s
+        value_template: >
+          {% set last = states.sensor.tibber_power.last_changed if states.sensor.tibber_power is defined else none %}
+          {{ last is none or (now() - last).total_seconds() > 90 }}
     action:
       - service: system_log.write
         data:
           message: >
-            Tibber realtime power sensor frozen for 15 min (state: {{ states('sensor.tibber_power') }}).
+            Tibber realtime power sensor stale for >90s (state={{ states('sensor.tibber_power') }},
+            last_changed={{ states.sensor.tibber_power.last_changed | string }}).
             Reloading Tibber integration.
           level: warning
       - service: homeassistant.reload_config_entry
         target:
           entity_id: sensor.tibber_power
       - delay:
-          seconds: 10
+          seconds: 15
       - service: notify.mobile_app
         data:
           title: "⚠️ Tibber Echtzeit-Daten eingefroren"
           message: >
-            Tibber Leistungssensor war 15 Min. eingefroren.
+            Tibber Leistungssensor war >90s eingefroren.
             Integration wurde automatisch neu geladen.
     mode: single
