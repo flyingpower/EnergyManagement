@@ -271,7 +271,9 @@ script:
               - condition: template
                 value_template: "{{ effective_current >= 6 }}"
               - condition: template
-                value_template: "{{ effective_current != current_charging_amps }}"
+                # Only adjust if difference is more than 1A to avoid constant small
+                # Easee API calls that cause power spikes on the meter
+                value_template: "{{ (effective_current - current_charging_amps) | abs > 1 }}"
             sequence:
               - service: system_log.write
                 data:

@@ -64,8 +64,8 @@ automation:
                   {% set min_surplus = states('input_number.min_pv_surplus') | float(1400) %}
                   {% set already_pv = is_state('input_select.charging_state', 'pv') %}
                   {% set is_charging = is_state('sensor.garage_status', 'charging') %}
-                  {# Stay in PV mode once started (timers in smart script handle stopping).
-                     Only require surplus >= min_surplus to enter from idle. #}
+                  {# Stay in PV mode once started — smart script handles stopping via its
+                     internal 300s stop timer. Only require surplus >= min_surplus to enter. #}
                   {{ surplus >= min_surplus or (already_pv and is_charging) }}
             sequence:
               - service: input_select.select_option
@@ -73,7 +73,10 @@ automation:
                   entity_id: input_select.charging_state
                 data:
                   option: "pv"
-              - service: script.adjust_pv_charging_smart
+              # Do NOT call adjust_pv_charging_smart here — the dedicated
+              # energy_mgmt_pv_charging_adjust automation runs every 2 minutes
+              # and handles current adjustment. Calling it here too causes a
+              # Easee API call every minute → power spikes on the Tibber meter.
 
           # Priority 4: Price-Based Charging (during scheduled hours)
           - conditions:

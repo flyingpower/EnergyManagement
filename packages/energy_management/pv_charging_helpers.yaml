@@ -23,6 +23,7 @@ input_number:
 template:
   - sensor:
       # Calculate target charging current to achieve ~0W net consumption
+      # Uses grid-meter model: tibber_power = grid import, tibber_power_production = grid export
       - name: "PV Target Charging Current"
         unique_id: pv_target_charging_current
         unit_of_measurement: "A"
@@ -32,25 +33,33 @@ template:
           {% set buffer = states('input_number.pv_charging_buffer') | float(200) %}
           {# garage_power is in kW — convert to W #}
           {% set current_charging_w = states('sensor.garage_power') | float(0) * 1000 %}
+          {% set current_limit = states('sensor.garage_dynamic_charger_limit') | int(6) %}
 
           {# Check for current override — if set, use that directly #}
           {% set override = states('input_number.override_charging_current') | int(0) %}
           {% if override >= 6 %}
             {{ override }}
           {% else %}
-            {# Total power available to allocate to the charger:
-               = what the charger is already drawing
-               + what we are currently exporting (negative net)
-               - safety buffer (so we stay slightly below 0W net) #}
+            {# net = grid import - grid export (negative = exporting) #}
             {% set net = consumption - production %}
+            {# Available power for charger = current charger draw + current export - buffer #}
             {% set available_for_charger = current_charging_w - net - buffer %}
 
             {# Convert to amps: 1-phase 230V #}
-            {% set voltage = 230 %}
-            {% set target_current = (available_for_charger / voltage) | round(0) | int %}
+            {% set target_current = (available_for_charger / 230) | round(0) | int %}
 
-            {# Clamp between 6A minimum and 32A maximum #}
-            {{ [[target_current, 6] | max, 32] | min }}
+            {# Clamp to 6–32A #}
+            {% set target_current = [[target_current, 6] | max, 32] | min %}
+
+            {# Step toward target by max 2A per cycle to avoid overshoot due to
+               Tibber's 30s polling lag. This gives smoother convergence. #}
+            {% if target_current > current_limit + 2 %}
+              {{ current_limit + 2 }}
+            {% elif target_current < current_limit - 2 %}
+              {{ current_limit - 2 }}
+            {% else %}
+              {{ target_current }}
+            {% endif %}
           {% endif %}
 
       # Net grid consumption (positive = importing, negative = exporting)
